@@ -1,10 +1,12 @@
 package nginx
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
 	"syscall"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
@@ -13,9 +15,10 @@ type Nginx struct {
 	cmd *exec.Cmd
 
 	confPath string
+	ctx      context.Context
 }
 
-func NewNginx(binPath, confPath string) (*Nginx, error) {
+func NewNginx(ctx context.Context, binPath, confPath string) (*Nginx, error) {
 	cmd := exec.Command(binPath, "-g", "daemon off;", "-c", confPath)
 
 	cmd.Stderr = os.Stderr
@@ -26,6 +29,21 @@ func NewNginx(binPath, confPath string) (*Nginx, error) {
 		confPath: confPath,
 	}
 	return n, nil
+}
+
+func (n *Nginx) loop() {
+	for {
+		select {
+		case <-n.ctx.Done():
+			return
+		default:
+			if n.cmd.ProcessState.Exited() {
+				logrus.Warn("nginx process exited, starting again")
+				n.Start()
+			}
+			time.Sleep(time.Millisecond * 100)
+		}
+	}
 }
 
 func (n *Nginx) ConfigPath() string {
@@ -71,6 +89,12 @@ func (n *Nginx) Restart() error {
 func (n *Nginx) Reload() error {
 	logrus.WithFields(logrus.Fields{
 		"pid": n.cmd.Process.Pid,
-	}).Info("Restarting nginx process")
-	return n.cmd.Process.Signal(syscall.SIGHUP)
+	}).Info("Reloading nginx process")
+	err := n.cmd.Process.Signal(syscall.SIGHUP)
+	if err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"pid": n.cmd.Process.Pid,
+		}).Error("Failed to send SIGHUP to nginx process to reload it")
+	}
+	return err
 }

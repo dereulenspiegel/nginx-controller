@@ -51,7 +51,7 @@ func main() {
 	startedContainers := dockerClient.StartedContainers()
 	stoppedContainers := dockerClient.StoppedContainers()
 
-	ngx, err := nginx.NewNginx(*pathToNginx, *nginxConfPath)
+	ngx, err := nginx.NewNginx(ctx, *pathToNginx, *nginxConfPath)
 	if err != nil {
 		logrus.WithError(err).Panic("Failed to create nginx process")
 	}

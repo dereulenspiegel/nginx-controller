@@ -243,17 +243,48 @@ func (m *Manager) RenewalForDomain(domain string) bool {
 }
 
 func (m *Manager) CertForDomain(domain string) (certPath string, keyPath string, newCerts bool, err error) {
+
 	certPath = filepath.Join(DefaultCertsBasePath, domain, "cert.pem")
 	keyPath = filepath.Join(DefaultCertsBasePath, domain, "key.pem")
 	domainFolder := filepath.Join(DefaultCertsBasePath, domain)
+	logrus.WithFields(logrus.Fields{
+		"domain":   domain,
+		"certPath": certPath,
+		"keyPath":  keyPath,
+	}).Info("Requesting certificate for domain")
 	if err = os.MkdirAll(domainFolder, 0755); err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"domain":     domain,
+			"certPath":   certPath,
+			"keyPath":    keyPath,
+			"domainPath": domainFolder,
+		}).Error("Failed to create folder for domain")
 		return
 	}
 
 	if !checkCertValid(certPath) {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"domain":     domain,
+			"certPath":   certPath,
+			"keyPath":    keyPath,
+			"domainPath": domainFolder,
+		}).Info("No valid certificate founf for domain")
 		if newCerts, err = m.requestCertificate(domain, certPath, keyPath); err != nil {
+			logrus.WithError(err).WithFields(logrus.Fields{
+				"domain":     domain,
+				"certPath":   certPath,
+				"keyPath":    keyPath,
+				"domainPath": domainFolder,
+			}).Error("Failed to request certificate for domain")
 			return "", "", newCerts, err
 		}
+	} else {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"domain":     domain,
+			"certPath":   certPath,
+			"keyPath":    keyPath,
+			"domainPath": domainFolder,
+		}).Info("Domain has already valid certificates")
 	}
 	return certPath, keyPath, newCerts, nil
 }
@@ -278,26 +309,41 @@ func (m *Manager) deleteHTTPToken(path string) {
 
 func (m *Manager) HTTP01ChallengeHandler(w http.ResponseWriter, r *http.Request) {
 	if !strings.HasPrefix(r.URL.Path, "/.well-known/acme-challenge/") {
+		logrus.WithFields(logrus.Fields{
+			"urlPath": r.URL.Path,
+		}).Error("Received request at invalid path")
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
 
 	token := m.getHTTPToken(r.URL.Path)
 	if token == "" {
+		logrus.WithFields(logrus.Fields{
+			"urlPath": r.URL.Path,
+		}).Error("Received request for not existing token")
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
+	logrus.WithFields(logrus.Fields{
+		"urlPath": r.URL.Path,
+	}).Info("Responding to HTTP-01 challenge")
 	w.Write([]byte(token))
 }
 
 func (m *Manager) requestCertificate(domain, certPath, keyPath string) (newCerts bool, err error) {
 	authz, err := m.acmeClient.Authorize(m.ctx, domain)
 	if err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"domain": domain,
+		}).Error("Failed to get authorization for domain")
 		return newCerts, err
 	}
 
 	if authz.Status != acme.StatusValid && authz.Status != acme.StatusInvalid {
 		newCerts = true
+		logrus.WithFields(logrus.Fields{
+			"domain": domain,
+		}).Info("Domain is currently not authorized")
 		var acceptedChallenge *acme.Challenge
 		for _, c := range authz.Challenges {
 			if c.Type == "http-01" {
@@ -307,17 +353,29 @@ func (m *Manager) requestCertificate(domain, certPath, keyPath string) (newCerts
 		}
 
 		if acceptedChallenge == nil {
+			logrus.WithFields(logrus.Fields{
+				"domain": domain,
+			}).Error("Can't find acceptable challenge for domain")
 			return newCerts, errors.New("No acceptable challenge found")
 		}
 		path := m.acmeClient.HTTP01ChallengePath(acceptedChallenge.Token)
 		m.putHTTPToken(path, acceptedChallenge.Token)
 		chal, err := m.acmeClient.Accept(m.ctx, acceptedChallenge)
 		if err != nil {
+			logrus.WithError(err).WithFields(logrus.Fields{
+				"domain": domain,
+			}).Error("Failed to accept authorization challenge")
 			return newCerts, err
 		}
 
+		logrus.WithFields(logrus.Fields{
+			"domain": domain,
+		}).Info("Waiting for Challenge to complete")
 		if err := m.waitForChallenge(chal, time.Minute*1); err != nil {
-			return newCerts, nil
+			logrus.WithError(err).WithFields(logrus.Fields{
+				"domain": domain,
+			}).Error("Challenge failed")
+			return false, err
 		}
 		m.deleteHTTPToken(path)
 	} else if authz.Status == acme.StatusInvalid {
@@ -327,48 +385,93 @@ func (m *Manager) requestCertificate(domain, certPath, keyPath string) (newCerts
 	privKeyFile, err := os.Open(keyPath)
 	var privKey *ecdsa.PrivateKey
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"domain": domain,
+		}).Info("Generating new private key for domain")
 		privKey, err = ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 		if err != nil {
+			logrus.WithError(err).WithFields(logrus.Fields{
+				"domain": domain,
+			}).Error("Failed to generate private key for domain")
 			return newCerts, err
 		}
 		privKeyFile, err := os.Create(keyPath)
 		if err != nil {
+			logrus.WithError(err).WithFields(logrus.Fields{
+				"domain": domain,
+			}).Error("Failed to create private key file")
 			return newCerts, err
 		}
+		logrus.WithFields(logrus.Fields{
+			"domain":         domain,
+			"privateKeyFile": privKey,
+		}).Info("Writing private key for domain")
 		writeKey(privKeyFile, privKey)
 	} else {
+		logrus.WithFields(logrus.Fields{
+			"domain":  domain,
+			"keyPath": keyPath,
+		}).Info("Using existing private key")
 		privKey, err = readKey(privKeyFile)
 		if err != nil {
+			logrus.WithError(err).WithFields(logrus.Fields{
+				"domain":  domain,
+				"keyPath": keyPath,
+			}).Error("Failed to read existing private key")
 			return newCerts, err
 		}
 	}
 
+	logrus.WithFields(logrus.Fields{
+		"domain": domain,
+	}).Info("Creating CSR")
 	csr, err := certRequest(privKey, domain, nil) // Ignore extensions for now
 
+	logrus.WithFields(logrus.Fields{
+		"domain": domain,
+	}).Info("Requesting certificate at ACME issuer")
 	der, _, err := m.acmeClient.CreateCert(m.ctx, csr, time.Hour*24*90, true)
 	if err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"domain": domain,
+		}).Error("Failed to create cert for domain")
 		return newCerts, err
 	}
 	return newCerts, writeCertBundle(certPath, der)
 }
 
 func (m *Manager) waitForChallenge(challenge *acme.Challenge, timeout time.Duration) (err error) {
+	logrus.WithFields(logrus.Fields{
+		"challengeToken": challenge.Token,
+		"timeoutSeconds": timeout.Seconds(),
+	}).Info("Waiting for challenge to complete")
 	expired := time.Now().Add(timeout)
-	for challenge.Status != acme.StatusValid || time.Now().After(expired) {
-		challenge, err = m.acmeClient.GetChallenge(m.ctx, challenge.URI)
+	for !time.Now().After(expired) {
+		aCtx, _ := context.WithTimeout(m.ctx, time.Second*10)
+		challenge, err = m.acmeClient.GetChallenge(aCtx, challenge.URI)
 		if err != nil {
+			logrus.WithError(err).WithFields(logrus.Fields{
+				"challengeToken": challenge.Token,
+			}).Error("Failed to retrieve updated challenge")
 			return err
 		}
-		if challenge.Status != acme.StatusPending {
+		/*if challenge.Status != acme.StatusPending {
 			break
 		}
 		if challenge.Status != acme.StatusProcessing {
+			break
+		}*/
+		if challenge.Status == acme.StatusValid {
 			break
 		}
 		time.Sleep(time.Second * 10)
 	}
 
 	if challenge.Status != acme.StatusValid {
+		logrus.WithFields(logrus.Fields{
+			"challengeStatus": challenge.Status,
+			"challengeError":  challenge.Error.Error(),
+		}).Error("Challange never became valid")
 		return errors.New("Challenge did not become valid during timeout")
 	}
 	return nil
@@ -426,6 +529,9 @@ func writeCertBundle(certFilePath string, bundle [][]byte) error {
 	certFile, err := os.Create(certFilePath)
 	defer certFile.Close()
 	if err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"certFilePath": certFilePath,
+		}).Error("Failed to create PEM cert bundle")
 		return err
 	}
 	for _, der := range bundle {
@@ -433,6 +539,9 @@ func writeCertBundle(certFilePath string, bundle [][]byte) error {
 			Type:  "CERTIFICATE",
 			Bytes: der,
 		}); err != nil {
+			logrus.WithError(err).WithFields(logrus.Fields{
+				"certFilePath": certFilePath,
+			}).Error("Failed to encode PEM cert bundle")
 			return err
 		}
 	}

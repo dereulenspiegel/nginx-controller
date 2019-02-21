@@ -150,6 +150,7 @@ func (c *controller) renderConfig() {
 }
 
 func (c *controller) addToServers(container *docker.ContainerConfig) {
+	logrus.Info("Adding to servers config")
 	server := nginx.DefaultServerTemplateConfig(container.Host, container.Upstream)
 	certPath, keyPath, newCert, err := c.certManager.CertForDomain(container.Host)
 	if err != nil {
@@ -163,9 +164,30 @@ func (c *controller) addToServers(container *docker.ContainerConfig) {
 	server.SSLCertificate = certPath
 	server.SSLKey = keyPath
 	c.nginxTmplConf.HTTP.Servers = append(c.nginxTmplConf.HTTP.Servers, server)
+	logrus.WithFields(logrus.Fields{
+		"certPath":     certPath,
+		"domain":       container.Host,
+		"containerID":  container.ContainerID,
+		"upstream":     container.Upstream,
+		"resartNgninx": newCert,
+	}).Info("Added virtual host to nginx template config")
 	if !newCert {
+		logrus.WithFields(logrus.Fields{
+			"certPath":     certPath,
+			"domain":       container.Host,
+			"containerID":  container.ContainerID,
+			"upstream":     container.Upstream,
+			"resartNgninx": newCert,
+		}).Info("Triggering reload for new server config")
 		c.triggerReload()
 	} else {
+		logrus.WithFields(logrus.Fields{
+			"certPath":     certPath,
+			"domain":       container.Host,
+			"containerID":  container.ContainerID,
+			"upstream":     container.Upstream,
+			"resartNgninx": newCert,
+		}).Info("Triggering restart to load new certificates")
 		c.triggerRestart()
 	}
 }
@@ -184,6 +206,8 @@ func (c *controller) loop() {
 			}
 			logrus.WithFields(logrus.Fields{
 				"containerID": container.ContainerID,
+				"host":        container.Host,
+				"upstream":    container.Upstream,
 			}).Info("Adding container")
 			c.addToServers(container)
 
@@ -194,6 +218,8 @@ func (c *controller) loop() {
 			}
 			logrus.WithFields(logrus.Fields{
 				"containerID": container.ContainerID,
+				"host":        container.Host,
+				"upstream":    container.Upstream,
 			}).Info("Removing container")
 			for i, s := range c.nginxTmplConf.HTTP.Servers {
 
