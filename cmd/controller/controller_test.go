@@ -125,6 +125,7 @@ func TestControlLoop(t *testing.T) {
 	time.Sleep(time.Millisecond * 50)
 	ctr.removeContainer(ccRemoved...)
 	time.Sleep(time.Millisecond * 50)
+	time.Sleep(time.Second * 2)
 	ctr.Close()
 
 	ngx.AssertExpectations(t)
