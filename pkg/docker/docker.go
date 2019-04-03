@@ -54,6 +54,9 @@ func (w *Watcher) watchEvents(filterArgs filters.Args) chan *ContainerConfig {
 	}(errChan)
 	go func(in <-chan events.Message) {
 		for event := range in {
+			logrus.WithFields(logrus.Fields{
+				"containerID": event.Actor.ID,
+			}).Info("Received docker event")
 			containerID := event.Actor.ID
 			cc, err := w.getContainerConfig(containerID)
 			if err != nil {
