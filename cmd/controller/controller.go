@@ -238,6 +238,8 @@ func (c *controller) loop() {
 			}
 
 		default:
+			// By default sleep a bit so we do not max out one core
+			time.Sleep(time.Second * 2)
 			currentConfigs, err := c.docker.CurrentConfigs()
 			if err != nil {
 				logrus.WithError(err).Error("Failed to retrieve current container configs")
