@@ -24,6 +24,8 @@ type CertificateManager interface {
 
 type DockerClient interface {
 	CurrentConfigs() ([]*docker.ContainerConfig, error)
+	StoppedContainers() chan *docker.ContainerConfig
+	StartedContainers() chan *docker.ContainerConfig
 }
 
 type controller struct {
@@ -72,6 +74,7 @@ func newController(ctx context.Context, certManager CertificateManager, ngx Ngin
 	go c.loopReload()
 	go c.loopRestart()
 	go c.loop()
+	go c.readDocker()
 	return c
 }
 
@@ -82,6 +85,21 @@ func (c *controller) Close() error {
 	close(c.reloadChan)
 	close(c.restartChan)
 	return nil
+}
+
+func (c *controller) readDocker() {
+	startedChan := c.docker.StartedContainers()
+	stoppedChan := c.docker.StoppedContainers()
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case cc := <-startedChan:
+			c.addContainer(cc)
+		case cc := <-stoppedChan:
+			c.removeContainer(cc)
+		}
+	}
 }
 
 func (c *controller) addContainer(ccs ...*docker.ContainerConfig) {
