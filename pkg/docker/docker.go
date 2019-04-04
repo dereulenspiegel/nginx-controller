@@ -64,6 +64,10 @@ func (w *Watcher) watchEvents(filterArgs filters.Args) chan *ContainerConfig {
 			}
 			if cc != nil {
 				out <- cc
+			} else {
+				logrus.WithFields(logrus.Fields{
+					"containerID": event.Actor.ID,
+				}).Warn("Container config generated for this event was nil")
 			}
 		}
 		close(out)
@@ -97,6 +101,11 @@ func (w *Watcher) getContainerConfig(containerID string) (*ContainerConfig, erro
 			Host:        host,
 		}
 		return cc, nil
+	} else {
+		logrus.WithFields(logrus.Fields{
+			"containerID": containerID,
+			"label":       fmt.Sprintf("%+v", labels),
+		}).Warn("Can't create container config because host label is missing on container")
 	}
 	return nil, nil
 }

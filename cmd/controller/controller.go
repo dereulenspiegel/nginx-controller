@@ -202,6 +202,7 @@ func (c *controller) loop() {
 		case container := <-c.serverToBeAdded:
 			if container == nil {
 				// channel was most likely closed
+				logrus.Info("Seems like the serversToBeAdded channel is closed")
 				return
 			}
 			logrus.WithFields(logrus.Fields{
@@ -213,7 +214,7 @@ func (c *controller) loop() {
 
 		case container := <-c.serverToBeRemoved:
 			if container == nil {
-				// channel was most likely closed
+				logrus.Info("Seems like the serverToBeRemoved channel is closed")
 				return
 			}
 			logrus.WithFields(logrus.Fields{
