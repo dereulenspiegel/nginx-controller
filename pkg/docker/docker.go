@@ -83,7 +83,16 @@ func (w *Watcher) getContainerConfig(containerID string) (*ContainerConfig, erro
 		}).Error("Could not inspect container after receiving event")
 		return nil, err
 	}
-	ipAddress := eventContainer.NetworkSettings.IPAddress
+	var ipAddress string
+	for _, network := range eventContainer.NetworkSettings.Networks {
+		if network.IPAddress != "" {
+			ipAddress = network.IPAddress
+			break
+		}
+	}
+	if ipAddress == "" {
+		ipAddress = eventContainer.NetworkSettings.IPAddress
+	}
 	labels := eventContainer.Config.Labels
 	host := labels[HostLabel]
 	port := 8080
