@@ -51,6 +51,13 @@ func (d *dockerMock) CurrentConfigs() ([]*docker.ContainerConfig, error) {
 	return args.Get(0).([]*docker.ContainerConfig), args.Error(1)
 }
 
+func (d *dockerMock) StoppedContainers() chan *docker.ContainerConfig {
+	return d.Called().Get(0).(chan *docker.ContainerConfig)
+}
+func (d *dockerMock) StartedContainers() chan *docker.ContainerConfig {
+	return d.Called().Get(0).(chan *docker.ContainerConfig)
+}
+
 func mockReplaceConfig(confPath, tmpl string, cfg *nginx.TemplateConfig) error {
 	return nil
 }
@@ -68,8 +75,11 @@ func TestControlLoop(t *testing.T) {
 		certs.On("CertForDomain", domain).Once().Return("/path/to/cert", "/path/to/key", false, nil)
 		certs.On("RenewalForDomain", domain).Maybe().Return(false)
 	}
-
+	startedChan := make(chan *docker.ContainerConfig, 1)
+	stoppedChan := make(chan *docker.ContainerConfig, 1)
 	dockerClient.On("CurrentConfigs").Return([]*docker.ContainerConfig{}, nil)
+	dockerClient.On("StoppedContainers").Return(stoppedChan)
+	dockerClient.On("StartedContainers").Return(startedChan)
 
 	ctx := context.Background()
 	ctr := newController(ctx, certs, ngx, dockerClient)
