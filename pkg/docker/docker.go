@@ -101,11 +101,6 @@ func (w *Watcher) getContainerConfig(containerID string) (*ContainerConfig, erro
 			Host:        host,
 		}
 		return cc, nil
-	} else {
-		logrus.WithFields(logrus.Fields{
-			"containerID": containerID,
-			"label":       fmt.Sprintf("%+v", labels),
-		}).Warn("Can't create container config because host label is missing on container")
 	}
 	return nil, nil
 }

@@ -268,7 +268,7 @@ func (m *Manager) CertForDomain(domain string) (certPath string, keyPath string,
 			"certPath":   certPath,
 			"keyPath":    keyPath,
 			"domainPath": domainFolder,
-		}).Info("No valid certificate founf for domain")
+		}).Info("No valid certificate found for domain")
 		if newCerts, err = m.requestCertificate(domain, certPath, keyPath); err != nil {
 			logrus.WithError(err).WithFields(logrus.Fields{
 				"domain":     domain,
@@ -326,6 +326,7 @@ func (m *Manager) HTTP01ChallengeHandler(w http.ResponseWriter, r *http.Request)
 	}
 	logrus.WithFields(logrus.Fields{
 		"urlPath": r.URL.Path,
+		"token":   token,
 	}).Info("Responding to HTTP-01 challenge")
 	w.Write([]byte(token))
 }
@@ -359,7 +360,15 @@ func (m *Manager) requestCertificate(domain, certPath, keyPath string) (newCerts
 			return newCerts, errors.New("No acceptable challenge found")
 		}
 		path := m.acmeClient.HTTP01ChallengePath(acceptedChallenge.Token)
-		m.putHTTPToken(path, acceptedChallenge.Token)
+		responseToken, err := m.acmeClient.HTTP01ChallengeResponse(acceptedChallenge.Token)
+		if err != nil {
+			logrus.WithError(err).WithFields(logrus.Fields{
+				"challengeToken": acceptedChallenge.Token,
+				"domain":         domain,
+			}).Error("Failed to create HTTP-01 response")
+			return newCerts, err
+		}
+		m.putHTTPToken(path, responseToken)
 		chal, err := m.acmeClient.Accept(m.ctx, acceptedChallenge)
 		if err != nil {
 			logrus.WithError(err).WithFields(logrus.Fields{
