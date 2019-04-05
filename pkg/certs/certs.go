@@ -492,6 +492,8 @@ func checkCertValid(certPath string) bool {
 	if err != nil {
 		if !os.IsNotExist(err) {
 			logger.WithError(err).Warn("Failed to open cert file")
+		} else {
+			logger.WithError(err).Warn("Can't find cert file")
 		}
 		return false
 	}
@@ -507,12 +509,14 @@ func checkCertValid(certPath string) bool {
 		return false
 	}
 	now := time.Now()
+	notExpired := cert.NotBefore.After(now) && cert.NotAfter.Before(now)
 	logger.WithFields(logrus.Fields{
-		"notBefore": cert.NotBefore.String(),
-		"notAfter":  cert.NotAfter.String(),
-		"now":       now.String(),
+		"notBefore":  cert.NotBefore.String(),
+		"notAfter":   cert.NotAfter.String(),
+		"now":        now.String(),
+		"notExpired": notExpired,
 	}).Info("Inspecting expiration of certificate")
-	return cert.NotBefore.After(now) && now.Before(cert.NotAfter)
+	return notExpired
 }
 
 func certRequest(key crypto.Signer, cn string, ext []pkix.Extension, san ...string) ([]byte, error) {

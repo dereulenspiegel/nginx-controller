@@ -312,15 +312,21 @@ func (c *controller) loop() {
 }
 
 func replaceConfig(confPath, tmpl string, cfg *nginx.TemplateConfig) error {
-
+	logger := logrus.WithFields(logrus.Fields{
+		"configPath": confPath,
+	})
+	logger.Info("Replacing existing nginx config")
 	os.Remove(confPath)
 	confFile, err := os.Create(confPath)
 	defer confFile.Close()
 	if err != nil {
-		logrus.WithError(err).WithFields(logrus.Fields{
-			"confPath": confPath,
-		}).Error("Failed to create config file")
+		logger.Error("Failed to create config file")
 		return err
 	}
-	return nginx.RenderConfig(tmpl, cfg, confFile)
+
+	if err := nginx.RenderConfig(tmpl, cfg, confFile); err != nil {
+		logger.WithError(err).Error("Failed to render nginx config to file")
+		return err
+	}
+	return confFile.Sync()
 }
