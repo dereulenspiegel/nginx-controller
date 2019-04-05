@@ -507,7 +507,12 @@ func checkCertValid(certPath string) bool {
 		return false
 	}
 	now := time.Now()
-	return cert.NotBefore.After(now) && now.After(cert.NotAfter)
+	logger.WithFields(logrus.Fields{
+		"notBefore": cert.NotBefore.String(),
+		"notAfter":  cert.NotAfter.String(),
+		"now":       now.String(),
+	}).Info("Inspecting expiration of certificate")
+	return cert.NotBefore.After(now) && now.Before(cert.NotAfter)
 }
 
 func certRequest(key crypto.Signer, cn string, ext []pkix.Extension, san ...string) ([]byte, error) {
