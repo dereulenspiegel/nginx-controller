@@ -487,17 +487,23 @@ func (m *Manager) waitForChallenge(challenge *acme.Challenge, timeout time.Durat
 }
 
 func checkCertValid(certPath string) bool {
+	logger := logrus.WithField("path", certPath)
 	certFile, err := os.Open(certPath)
 	if err != nil {
+		if !os.IsNotExist(err) {
+			logger.WithError(err).Warn("Failed to open cert file")
+		}
 		return false
 	}
 	certBytes, err := ioutil.ReadAll(certFile)
 	if err != nil {
+		logger.WithError(err).Warn("Failed to read certificate bytes")
 		return false
 	}
 	block, _ := pem.Decode(certBytes)
 	cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
+		logger.WithError(err).Warn("Failed to parse certificate")
 		return false
 	}
 	now := time.Now()
