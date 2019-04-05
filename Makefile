@@ -6,7 +6,7 @@ VERSION 				?= $(shell git describe --tags --always --dirty)
 RELEASE_VERSION		?= $(shell git describe --abbrev=0)
 LDFLAGS       	?= -X github.com/dereulenspiegel/nginx-controller/pkg/nginx.Version=$(VERSION) -w -s
 
-GO_BUILD=$(GO_ENV) go build -ldflags "$(LDFLAGS)" -mod=vendor
+GO_BUILD=$(GO_ENV) go build -ldflags "$(LDFLAGS)"
 GO_TEST=$(GO_ENV) go test -v
 
 .PHONY: clean test docker docker.build docker.push

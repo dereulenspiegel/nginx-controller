@@ -115,13 +115,18 @@ func (w *Watcher) getContainerConfig(containerID string) (*ContainerConfig, erro
 }
 
 func (w *Watcher) StoppedContainers() chan *ContainerConfig {
+	filterArgs := filters.NewArgs()
+	filterArgs.Add("type", "container")
+	filterArgs.Add("event", "stop")
 
-	filterArgs := filters.NewArgs(filters.Arg("type", "container"), filters.Arg("event", "stop"))
 	return w.watchEvents(filterArgs)
 }
 
 func (w *Watcher) StartedContainers() chan *ContainerConfig {
-	filterArgs := filters.NewArgs(filters.Arg("type", "container"), filters.Arg("event", "start"))
+	filterArgs := filters.NewArgs()
+	filterArgs.Add("type", "container")
+	filterArgs.Add("event", "start")
+
 	return w.watchEvents(filterArgs)
 }
 

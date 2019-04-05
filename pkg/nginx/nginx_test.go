@@ -67,11 +67,11 @@ http {
 
 
     server {
-      listen          443 ssl http2 default_server;
-      listen          [::]:443 ssl http2 default_server;
+      listen          443 ssl http2;
+      listen          [::]:443 ssl http2;
       server_name     foo.bar;
 
-      ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+      ssl_protocols TLSv1.2;
       ssl_prefer_server_ciphers on;
       ssl_ciphers "EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH";
       ssl_ecdh_curve auto;
@@ -135,7 +135,7 @@ http {
 
 func TestRenderConfig(t *testing.T) {
 	tmplCfg := DefaultTemplateConfig()
-	tmplCfg.HTTP.Servers = append(tmplCfg.HTTP.Servers, DefaultServerTemplateConfig("foo.bar", "http://172.16.0.1:8080"))
+	tmplCfg.HTTP.Servers["foo.bar"] = DefaultServerTemplateConfig("foo.bar", "http://172.16.0.1:8080")
 
 	buf := &bytes.Buffer{}
 
