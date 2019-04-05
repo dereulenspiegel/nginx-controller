@@ -165,6 +165,12 @@ func TmplSpaceList(in []string) string {
 }
 
 func RenderConfig(tmplString string, cfg *TemplateConfig, out io.Writer) (err error) {
+	for host, s := range cfg.HTTP.Servers {
+		logrus.WithFields(logrus.Fields{
+			"host":     host,
+			"upstream": s.Locations["/"].Upstream,
+		}).Info("Including host in rendering")
+	}
 	tmpl := template.New("nginx.conf").Funcs(nginxTmplFuncs)
 	tmpl, err = tmpl.Parse(tmplString)
 	if err != nil {
