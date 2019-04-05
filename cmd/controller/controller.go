@@ -95,8 +95,18 @@ func (c *controller) readDocker() {
 		case <-c.ctx.Done():
 			return
 		case cc := <-startedChan:
+			logrus.WithFields(logrus.Fields{
+				"component":   "controller",
+				"host":        cc.Host,
+				"containerID": cc.ContainerID,
+			}).Info("Received started container event")
 			c.addContainer(cc)
 		case cc := <-stoppedChan:
+			logrus.WithFields(logrus.Fields{
+				"component":   "controller",
+				"host":        cc.Host,
+				"containerID": cc.ContainerID,
+			}).Info("Received stopped container event")
 			c.removeContainer(cc)
 		}
 	}
@@ -120,6 +130,7 @@ func (c *controller) loopRestart() {
 		case <-c.ctx.Done():
 			return
 		case <-c.restartChan:
+			logrus.Info("Restarting nginx")
 			c.renderConfig()
 			if err := c.ngx.Restart(); err != nil {
 				logrus.WithError(err).Error("Failed to restart nginx")
@@ -135,6 +146,7 @@ func (c *controller) loopReload() {
 		case <-c.ctx.Done():
 			return
 		case <-c.reloadChan:
+			logrus.Info("Reloading nginx")
 			c.renderConfig()
 			c.ngx.Reload()
 			time.Sleep(time.Second * 10)
@@ -157,6 +169,7 @@ func (c *controller) triggerReload() {
 }
 
 func (c *controller) renderConfig() {
+	logrus.Info("Rendering nginx config")
 	confPath := c.ngx.ConfigPath()
 	c.tmplLock.Lock()
 	defer c.tmplLock.Unlock()
@@ -220,7 +233,7 @@ func (c *controller) addToServers(container *docker.ContainerConfig) {
 			"upstream":     container.Upstream,
 			"resartNgninx": newCert,
 		}).Info("Triggering restart to load new certificates")
-		c.triggerRestart()
+		c.triggerReload()
 	}
 }
 

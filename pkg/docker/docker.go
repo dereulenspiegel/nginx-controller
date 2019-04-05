@@ -56,6 +56,8 @@ func (w *Watcher) watchEvents(filterArgs filters.Args) chan *ContainerConfig {
 		for event := range in {
 			logrus.WithFields(logrus.Fields{
 				"containerID": event.Actor.ID,
+				"action":      event.Action,
+				"type":        event.Type,
 			}).Info("Received docker event")
 			containerID := event.Actor.ID
 			cc, err := w.getContainerConfig(containerID)
@@ -63,6 +65,11 @@ func (w *Watcher) watchEvents(filterArgs filters.Args) chan *ContainerConfig {
 				logrus.WithError(err).Error("Could not inspect container")
 			}
 			if cc != nil {
+				logrus.WithFields(logrus.Fields{
+					"containerID": event.Actor.ID,
+					"action":      event.Action,
+					"type":        event.Type,
+				}).Info("Forwarding container event")
 				out <- cc
 			} else {
 				logrus.WithFields(logrus.Fields{
