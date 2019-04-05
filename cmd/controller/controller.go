@@ -160,6 +160,20 @@ func (c *controller) renderConfig() {
 	confPath := c.ngx.ConfigPath()
 	c.tmplLock.Lock()
 	defer c.tmplLock.Unlock()
+	for host, s := range c.nginxTmplConf.HTTP.Servers {
+		if s.SSLCertificate == "" || s.SSLKey == "" {
+			certPath, keyPath, _, err := c.certManager.CertForDomain(host)
+			if err != nil {
+				logrus.WithError(err).WithFields(logrus.Fields{
+					"host": host,
+				}).Error("Failed to get key and cert path")
+				delete(c.nginxTmplConf.HTTP.Servers, host)
+				continue
+			}
+			s.SSLCertificate = certPath
+			s.SSLKey = keyPath
+		}
+	}
 	if err := c.renderToFile(confPath, c.ngnxTmpl, c.nginxTmplConf); err != nil {
 		logrus.WithError(err).WithFields(logrus.Fields{
 			"confPath": confPath,
