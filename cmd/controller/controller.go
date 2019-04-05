@@ -181,7 +181,7 @@ func (c *controller) addToServers(container *docker.ContainerConfig) {
 	}
 	server.SSLCertificate = certPath
 	server.SSLKey = keyPath
-	c.nginxTmplConf.HTTP.Servers = append(c.nginxTmplConf.HTTP.Servers, server)
+	c.nginxTmplConf.HTTP.Servers[container.Host] = server
 	logrus.WithFields(logrus.Fields{
 		"certPath":     certPath,
 		"domain":       container.Host,
@@ -240,13 +240,7 @@ func (c *controller) loop() {
 				"host":        container.Host,
 				"upstream":    container.Upstream,
 			}).Info("Removing container")
-			for i, s := range c.nginxTmplConf.HTTP.Servers {
-
-				if container.Host == s.ServerName {
-					c.nginxTmplConf.HTTP.Servers = append(c.nginxTmplConf.HTTP.Servers[:i], c.nginxTmplConf.HTTP.Servers[i+1:]...)
-					break
-				}
-			}
+			delete(c.nginxTmplConf.HTTP.Servers, container.Host)
 			c.triggerReload()
 
 		case <-c.renewalTicker.C:
@@ -258,42 +252,32 @@ func (c *controller) loop() {
 
 		default:
 			// By default sleep a bit so we do not max out one core
-			time.Sleep(time.Second * 2)
+			time.Sleep(time.Second * 1)
 			currentConfigs, err := c.docker.CurrentConfigs()
 			if err != nil {
 				logrus.WithError(err).Error("Failed to retrieve current container configs")
 				continue
 			}
 
-			var servers []*nginx.ServerConfig
-			for _, s := range c.nginxTmplConf.HTTP.Servers {
-				found := false
-				for _, c := range currentConfigs {
-					if s.ServerName == c.Host {
-						found = true
-						break
-					}
-				}
-				if found {
-					servers = append(servers, s)
-				} else {
-					c.triggerReload()
-				}
-			}
-			c.nginxTmplConf.HTTP.Servers = servers
-
+			reloadNecessary := false
+			newServers := make(map[string]*nginx.ServerConfig)
 			for _, cc := range currentConfigs {
-				found := false
-				for _, s := range c.nginxTmplConf.HTTP.Servers {
-					if cc.Host == s.ServerName {
-						found = true
-						break
-					}
-					if !found {
-						c.addToServers(cc)
-					}
+				s := nginx.DefaultServerTemplateConfig(cc.Host, cc.Upstream)
+				newServers[cc.Host] = s
+				if _, exists := c.nginxTmplConf.HTTP.Servers[cc.Host]; !exists {
+					reloadNecessary = true
 				}
 			}
+			for host, _ := range c.nginxTmplConf.HTTP.Servers {
+				if _, exists := newServers[host]; !exists {
+					reloadNecessary = true
+				}
+			}
+			c.nginxTmplConf.HTTP.Servers = newServers
+			if reloadNecessary {
+				c.triggerReload()
+			}
+
 		}
 
 		c.tmplLock.Unlock()

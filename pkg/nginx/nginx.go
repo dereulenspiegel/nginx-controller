@@ -49,18 +49,16 @@ type HTTPConfig struct {
 	GZIPProxied               string
 	GZIPTypes                 []string
 	ClientMaxBodySize         uint64
-	Servers                   []*ServerConfig
+	Servers                   map[string]*ServerConfig
 }
 
 func (h *HTTPConfig) UpdateServerDefaultUpstream(host, upstream string) error {
-	for _, s := range h.Servers {
-		if s.ServerName == host {
-			loc, exists := s.Locations["/"]
-			if !exists {
-				return LocationBlockNotFound
-			}
+	if s, exists := h.Servers[host]; exists {
+		if loc, exists := s.Locations["/"]; exists {
 			loc.Upstream = upstream
 			return nil
+		} else {
+			return LocationBlockNotFound
 		}
 	}
 	return ServerBlockNotFound
@@ -123,6 +121,7 @@ func DefaultTemplateConfig() *TemplateConfig {
 				"text/javascript",
 			},
 			ClientMaxBodySize: 25 * 1024 * 1024,
+			Servers:           make(map[string]*ServerConfig),
 		},
 	}
 }

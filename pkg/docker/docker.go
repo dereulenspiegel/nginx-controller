@@ -126,8 +126,10 @@ func (w *Watcher) StartedContainers() chan *ContainerConfig {
 }
 
 func (w *Watcher) CurrentConfigs() (configs []*ContainerConfig, err error) {
+	//filterArgs := filters.NewArgs(filters.Arg("state", "started"))
 	listOptions := types.ContainerListOptions{}
 	containers, err := w.client.ContainerList(w.ctx, listOptions)
+
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +139,7 @@ func (w *Watcher) CurrentConfigs() (configs []*ContainerConfig, err error) {
 		if err != nil {
 			logrus.WithError(err).WithFields(logrus.Fields{
 				"containerID": c.ID,
-			}).Error("Could not inspect container")
+			}).Error("Could not inspect container for current configs")
 		}
 		if cc != nil {
 			configs = append(configs, cc)
