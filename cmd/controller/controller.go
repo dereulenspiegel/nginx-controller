@@ -179,7 +179,7 @@ func (c *controller) renderConfig() {
 			if err != nil {
 				logrus.WithError(err).WithFields(logrus.Fields{
 					"host": host,
-				}).Error("Failed to get key and cert path")
+				}).Error("Failed to get key and cert path, removing from servers")
 				delete(c.nginxTmplConf.HTTP.Servers, host)
 				continue
 			}

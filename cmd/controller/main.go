@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -42,7 +43,11 @@ func main() {
 	if err != nil {
 		logrus.WithError(err).Panic("Could not create docker client")
 	}
-
+	cc, _ := dockerClient.CurrentConfigs()
+	logrus.WithFields(logrus.Fields{
+		"containerCount": len(cc),
+		"err":            fmt.Sprintf("%s", err),
+	}).Info("Inspected currently running containers")
 	certClient, err := certs.NewManager(ctx, *emailAddr, *acmeDirectoryUrl)
 	if err != nil {
 		logrus.WithError(err).Panic("Failed to create certificate manager")

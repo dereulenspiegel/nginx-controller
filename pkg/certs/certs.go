@@ -509,7 +509,7 @@ func checkCertValid(certPath string) bool {
 		return false
 	}
 	now := time.Now()
-	notExpired := cert.NotBefore.After(now) && cert.NotAfter.Before(now)
+	notExpired := now.After(cert.NotBefore) && cert.NotAfter.Before(now)
 	logger.WithFields(logrus.Fields{
 		"notBefore":  cert.NotBefore.String(),
 		"notAfter":   cert.NotAfter.String(),

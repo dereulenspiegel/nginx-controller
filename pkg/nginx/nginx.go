@@ -165,6 +165,9 @@ func TmplSpaceList(in []string) string {
 }
 
 func RenderConfig(tmplString string, cfg *TemplateConfig, out io.Writer) (err error) {
+	if len(cfg.HTTP.Servers) == 0 {
+		logrus.Warn("No servers found in nginx template config")
+	}
 	for host, s := range cfg.HTTP.Servers {
 		logrus.WithFields(logrus.Fields{
 			"host":     host,
