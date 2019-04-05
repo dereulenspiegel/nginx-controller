@@ -126,6 +126,7 @@ func (m *Manager) ensureAccount(email string) error {
 		os.Remove(keyFilePath)
 
 		accountFile, err = os.Create(accountFilePath)
+		defer accountFile.Close()
 		if err != nil {
 			logrus.WithError(err).WithFields(logrus.Fields{
 				"accountFilePath": accountFilePath,
@@ -135,6 +136,7 @@ func (m *Manager) ensureAccount(email string) error {
 		}
 
 		keyFile, err = os.Create(keyFilePath)
+		defer keyFile.Close()
 		if err != nil {
 			logrus.WithError(err).WithFields(logrus.Fields{
 				"keyFilePath": keyFilePath,
@@ -405,6 +407,7 @@ func (m *Manager) requestCertificate(domain, certPath, keyPath string) (newCerts
 			return newCerts, err
 		}
 		privKeyFile, err := os.Create(keyPath)
+		defer privKeyFile.Close()
 		if err != nil {
 			logrus.WithError(err).WithFields(logrus.Fields{
 				"domain": domain,
@@ -509,7 +512,7 @@ func checkCertValid(certPath string) bool {
 		return false
 	}
 	now := time.Now()
-	notExpired := now.After(cert.NotBefore) && cert.NotAfter.Before(now)
+	notExpired := now.After(cert.NotBefore) && now.Before(cert.NotAfter)
 	logger.WithFields(logrus.Fields{
 		"notBefore":  cert.NotBefore.String(),
 		"notAfter":   cert.NotAfter.String(),
@@ -579,7 +582,7 @@ func writeKey(keyFile *os.File, key *ecdsa.PrivateKey) error {
 	}
 
 	pemBlock := pem.Block{
-		Type:  "PRIVATE KEY",
+		Type:  "EC PRIVATE KEY",
 		Bytes: keyBytes,
 	}
 	return pem.Encode(keyFile, &pemBlock)
