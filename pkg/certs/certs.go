@@ -440,7 +440,9 @@ func (m *Manager) requestCertificate(domain, certPath, keyPath string) (newCerts
 	logrus.WithFields(logrus.Fields{
 		"domain": domain,
 	}).Info("Requesting certificate at ACME issuer")
-	der, _, err := m.acmeClient.CreateCert(m.ctx, csr, time.Hour*24*90, true)
+	ctx, cancel := context.WithTimeout(m.ctx, time.Second*60)
+	defer cancel()
+	der, _, err := m.acmeClient.CreateCert(ctx, csr, time.Hour*24*90, true)
 	if err != nil {
 		logrus.WithError(err).WithFields(logrus.Fields{
 			"domain": domain,
