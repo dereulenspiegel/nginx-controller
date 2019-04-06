@@ -212,11 +212,11 @@ func (m *Manager) renewCertificate(domain string, certBytes []byte) (newCerts bo
 		return false, err
 	}
 
-	logrus.Info("Revoking old certificate")
+	/*logrus.Info("Revoking old certificate")
 	if err = m.acmeClient.RevokeCert(m.ctx, nil, certBytes, acme.CRLReasonSuperseded); err != nil {
 		logger.WithError(err).Error("Failed to revoke certificate")
 		return
-	}
+	}*/
 	logrus.Info("Requesting new certificate")
 	newCerts, err = m.requestCertificate(domain, certPath, keyPath)
 	if err != nil {
