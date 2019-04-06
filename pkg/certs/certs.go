@@ -156,11 +156,14 @@ func (m *Manager) ensureAccount(email string) error {
 
 		var privateKey crypto.Signer
 
-		privateKey, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+		if m.useRSAAccountKey {
+			privateKey, err = rsa.GenerateKey(rand.Reader, 4096)
+		} else {
+			privateKey, err = ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+		}
 		if err != nil {
 			logrus.WithError(err).WithFields(logrus.Fields{
 				"email": email,
-				"curve": "P384",
 			}).Error("Failed to generate private key for account")
 			return err
 		}
