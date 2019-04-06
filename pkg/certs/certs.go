@@ -6,6 +6,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
@@ -43,7 +44,8 @@ type Manager struct {
 
 	httpServer *http.Server
 
-	mockRenewal bool
+	mockRenewal      bool
+	useRSAAccountKey bool
 }
 
 func NewManager(ctx context.Context, email string, acmeUri string) (*Manager, error) {
@@ -51,12 +53,13 @@ func NewManager(ctx context.Context, email string, acmeUri string) (*Manager, er
 		acmeClient: &acme.Client{
 			DirectoryURL: acmeUri,
 		},
-		ctx:           ctx,
-		httpTokens:    make(map[string]string),
-		httpTokenLock: &sync.Mutex{},
-		email:         email,
-		renewBefore:   time.Hour * 24 * 30,
-		mockRenewal:   true,
+		ctx:              ctx,
+		httpTokens:       make(map[string]string),
+		httpTokenLock:    &sync.Mutex{},
+		email:            email,
+		renewBefore:      time.Hour * 24 * 30,
+		mockRenewal:      true,
+		useRSAAccountKey: true,
 	}
 
 	if err := os.MkdirAll(AccountPath, 0755); err != nil {
@@ -77,6 +80,9 @@ func NewManager(ctx context.Context, email string, acmeUri string) (*Manager, er
 	}
 	m.httpServer = hs
 	if err := m.ensureAccount(email); err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"email": email,
+		}).Error("Failed to ensure account")
 		return nil, err
 	}
 
@@ -147,6 +153,8 @@ func (m *Manager) ensureAccount(email string) error {
 			}).Error("Failed creating the private.key")
 			return err
 		}
+
+		var privateKey crypto.Signer
 
 		privateKey, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 		if err != nil {
@@ -419,7 +427,7 @@ func (m *Manager) requestCertificate(domain, certPath, keyPath string) (newCerts
 	}
 	// Assume that we have a valid authorization now for our domain
 	privKeyFile, err := os.Open(keyPath)
-	var privKey *ecdsa.PrivateKey
+	var privKey crypto.Signer
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"domain": domain,
@@ -606,20 +614,34 @@ func writeCertBundle(certFilePath string, bundle [][]byte) error {
 	return nil
 }
 
-func writeKey(keyFile *os.File, key *ecdsa.PrivateKey) error {
-	keyBytes, err := x509.MarshalECPrivateKey(key)
-	if err != nil {
-		return err
+func writeKey(keyFile *os.File, key crypto.PrivateKey) error {
+	switch t := key.(type) {
+	case *ecdsa.PrivateKey:
+		keyBytes, err := x509.MarshalECPrivateKey(t)
+		if err != nil {
+			return err
+		}
+
+		pemBlock := pem.Block{
+			Type:  "EC PRIVATE KEY",
+			Bytes: keyBytes,
+		}
+		return pem.Encode(keyFile, &pemBlock)
+	case *rsa.PrivateKey:
+		keyBytes := x509.MarshalPKCS1PrivateKey(t)
+
+		pemBlock := pem.Block{
+			Type:  "PRIVATE KEY",
+			Bytes: keyBytes,
+		}
+		return pem.Encode(keyFile, &pemBlock)
+	default:
+		return errors.New("Unknown key format")
 	}
 
-	pemBlock := pem.Block{
-		Type:  "EC PRIVATE KEY",
-		Bytes: keyBytes,
-	}
-	return pem.Encode(keyFile, &pemBlock)
 }
 
-func readKey(keyFile *os.File) (key *ecdsa.PrivateKey, err error) {
+func readKey(keyFile *os.File) (key crypto.Signer, err error) {
 	pemBytes, err := ioutil.ReadAll(keyFile)
 	if err != nil {
 		return nil, err
@@ -629,5 +651,12 @@ func readKey(keyFile *os.File) (key *ecdsa.PrivateKey, err error) {
 		return nil, err
 	}
 
-	return x509.ParseECPrivateKey(block.Bytes)
+	switch block.Type {
+	case "EC PRIVATE KEY":
+		return x509.ParseECPrivateKey(block.Bytes)
+	case "PRIVATE KEY":
+		return x509.ParsePKCS1PrivateKey(block.Bytes)
+	}
+
+	return nil, errors.New("Unknown key type")
 }
