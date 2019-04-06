@@ -42,6 +42,8 @@ type Manager struct {
 	renewBefore   time.Duration
 
 	httpServer *http.Server
+
+	mockRenewal bool
 }
 
 func NewManager(ctx context.Context, email string, acmeUri string) (*Manager, error) {
@@ -54,6 +56,7 @@ func NewManager(ctx context.Context, email string, acmeUri string) (*Manager, er
 		httpTokenLock: &sync.Mutex{},
 		email:         email,
 		renewBefore:   time.Hour * 24 * 30,
+		mockRenewal:   true,
 	}
 
 	if err := os.MkdirAll(AccountPath, 0755); err != nil {
@@ -195,6 +198,34 @@ func (m *Manager) ensureAccount(email string) error {
 	return nil
 }
 
+func (m *Manager) renewCertificate(domain string, certBytes []byte) (newCerts bool, err error) {
+	certPath := filepath.Join(DefaultCertsBasePath, domain, "cert.pem")
+	keyPath := filepath.Join(DefaultCertsBasePath, domain, "key.pem")
+	logger := logrus.WithFields(logrus.Fields{
+		"domain":   domain,
+		"certPath": certPath,
+		"keyPath":  keyPath,
+	})
+	logger.Info("Renewing certificate")
+	if m.mockRenewal {
+		logger.Info("Actual renewing disabled for now")
+		return false, err
+	}
+
+	logrus.Info("Revoking old certificate")
+	if err = m.acmeClient.RevokeCert(m.ctx, nil, certBytes, acme.CRLReasonSuperseded); err != nil {
+		logger.WithError(err).Error("Failed to revoke certificate")
+		return
+	}
+	logrus.Info("Requesting new certificate")
+	newCerts, err = m.requestCertificate(domain, certPath, keyPath)
+	if err != nil {
+		logger.WithError(err).Error("Failed to request certificate")
+
+	}
+	return
+}
+
 func (m *Manager) RenewalForDomain(domain string) bool {
 	certPath := filepath.Join(DefaultCertsBasePath, domain, "cert.pem")
 	keyPath := filepath.Join(DefaultCertsBasePath, domain, "key.pem")
@@ -224,14 +255,10 @@ func (m *Manager) RenewalForDomain(domain string) bool {
 		}
 
 		if len(certBytes) > 0 {
-			logrus.Info("Revoking old certificate")
-			if err := m.acmeClient.RevokeCert(m.ctx, nil, certBytes, acme.CRLReasonSuperseded); err != nil {
-				logger.WithError(err).Error("Failed to revoke certificate")
-			}
-			logrus.Info("Requesting new certificate")
-			newCerts, err := m.requestCertificate(domain, certPath, keyPath)
+			newCerts, err := m.renewCertificate(domain, certBytes)
 			if err != nil {
-				logger.WithError(err).Error("Failed to request certificate")
+				logger.WithError(err).Error("Failed to renew certificate")
+				return false
 			}
 			return newCerts
 		} else {
