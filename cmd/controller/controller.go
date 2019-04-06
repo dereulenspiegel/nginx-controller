@@ -238,6 +238,7 @@ func (c *controller) addToServers(container *docker.ContainerConfig) {
 }
 
 func (c *controller) loop() {
+	c.checkForRenewal()
 	for {
 		c.tmplLock.Lock()
 		select {
@@ -271,11 +272,7 @@ func (c *controller) loop() {
 			c.triggerReload()
 
 		case <-c.renewalTicker.C:
-			for _, s := range c.nginxTmplConf.HTTP.Servers {
-				if c.certManager.RenewalForDomain(s.ServerName) {
-					c.triggerRestart()
-				}
-			}
+			c.checkForRenewal()
 
 		default:
 			// By default sleep a bit so we do not max out one core
@@ -308,6 +305,14 @@ func (c *controller) loop() {
 		}
 
 		c.tmplLock.Unlock()
+	}
+}
+
+func (c *controller) checkForRenewal() {
+	for _, s := range c.nginxTmplConf.HTTP.Servers {
+		if c.certManager.RenewalForDomain(s.ServerName) {
+			c.triggerRestart()
+		}
 	}
 }
 

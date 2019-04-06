@@ -198,13 +198,17 @@ func (m *Manager) ensureAccount(email string) error {
 func (m *Manager) RenewalForDomain(domain string) bool {
 	certPath := filepath.Join(DefaultCertsBasePath, domain, "cert.pem")
 	keyPath := filepath.Join(DefaultCertsBasePath, domain, "key.pem")
+	logger := logrus.WithFields(logrus.Fields{
+		"domain":   domain,
+		"certPath": certPath,
+		"keyPath":  keyPath,
+	})
+	logger.Info("Checking domain for renewal")
 	if !checkCertValid(certPath) {
+		logger.Info("Domain needs renewal")
 		derBytes, err := loadCertBundle(certPath)
 		if err != nil {
-			logrus.WithError(err).WithFields(logrus.Fields{
-				"domain":   domain,
-				"certPath": certPath,
-			}).Error("Failed to load PEM pundle")
+			logger.WithError(err).Error("Failed to load PEM pundle")
 		}
 		var certBytes []byte
 		for _, b := range derBytes {
@@ -220,27 +224,21 @@ func (m *Manager) RenewalForDomain(domain string) bool {
 		}
 
 		if len(certBytes) > 0 {
+			logrus.Info("Revoking old certificate")
 			if err := m.acmeClient.RevokeCert(m.ctx, nil, certBytes, acme.CRLReasonSuperseded); err != nil {
-				logrus.WithError(err).WithFields(logrus.Fields{
-					"domain":   domain,
-					"certPath": certPath,
-				}).Error("Failed to revoke certificate")
+				logger.WithError(err).Error("Failed to revoke certificate")
 			}
+			logrus.Info("Requesting new certificate")
 			newCerts, err := m.requestCertificate(domain, certPath, keyPath)
 			if err != nil {
-				logrus.WithError(err).WithFields(logrus.Fields{
-					"certPath": certPath,
-					"domain":   domain,
-				}).Error("Failed to request certificate")
+				logger.WithError(err).Error("Failed to request certificate")
 			}
 			return newCerts
 		} else {
-			logrus.WithFields(logrus.Fields{
-				"certPath": certPath,
-				"domain":   domain,
-			}).Error("Couldn't find certificate for domain in PEM bundle")
+			logger.Error("Couldn't find certificate for domain in PEM bundle")
 		}
 	}
+	logger.Info("Certificate is still valid")
 	return false
 }
 
@@ -449,6 +447,10 @@ func (m *Manager) requestCertificate(domain, certPath, keyPath string) (newCerts
 		}).Error("Failed to create cert for domain")
 		return newCerts, err
 	}
+	logrus.WithFields(logrus.Fields{
+		"domain":   domain,
+		"certPath": certPath,
+	}).Info("Writing certificate to disk")
 	return newCerts, writeCertBundle(certPath, der)
 }
 
