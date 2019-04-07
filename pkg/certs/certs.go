@@ -9,14 +9,9 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -26,14 +21,57 @@ import (
 )
 
 var (
-	DefaultCertsBasePath = "/var/lib/nginx-controller/domains"
-
-	AccountPath = "/var/lib/nginx-controller/account"
+	DefaultBasePath = "/var/lib/nginx-controller"
 )
 
+type caClient interface {
+	SetKey(privateKey crypto.Signer)
+	SetDirectoryURL(directoryURL string)
+
+	Register(ctx context.Context, acc *acme.Account, acceptTos func(tos string) bool) (*acme.Account, error)
+	Accept(ctx context.Context, chal *acme.Challenge) (*acme.Challenge, error)
+	Authorize(ctx context.Context, domain string) (*acme.Authorization, error)
+	CreateCert(ctx context.Context, csr []byte, exp time.Duration, bundle bool) (der [][]byte, certURL string, err error)
+	GetAuthorization(ctx context.Context, url string) (*acme.Authorization, error)
+	GetChallenge(ctx context.Context, url string) (*acme.Challenge, error)
+	HTTP01ChallengePath(token string) string
+	HTTP01ChallengeResponse(token string) (string, error)
+	WaitAuthorization(ctx context.Context, url string) (*acme.Authorization, error)
+}
+
+type store interface {
+	StoreAccountKey(privateKey crypto.Signer) error
+	LoadAccountKey() (crypto.Signer, error)
+
+	StoreAccount(acc *acme.Account) error
+	LoadAccount() (acc *acme.Account, err error)
+
+	StoreDomainPrivateKey(domain string, privateKey crypto.Signer) error
+	LoadDomainPrivateKey(domain string) (crypto.Signer, error)
+	StoreCertDerBundle(domain string, certs [][]byte) error
+	LoadCertDerBundle(domain string) (certs [][]byte, err error)
+	LoadCertBundle(domain string) (certs []*x509.Certificate, err error)
+	LoadCert(domain string) (cert *x509.Certificate, err error)
+	KeyPath(domain string) (keyPath string, err error)
+	CertPath(domain string) (certPath string, err error)
+}
+
+type acmeClient struct {
+	acme.Client
+}
+
+func (a *acmeClient) SetKey(privateKey crypto.Signer) {
+	a.Client.Key = privateKey
+}
+
+func (a *acmeClient) SetDirectoryURL(directoryURL string) {
+	a.Client.DirectoryURL = directoryURL
+}
+
 type Manager struct {
-	acmeClient  *acme.Client
+	acmeClient  caClient
 	acmeAccount *acme.Account
+	certStore   store
 
 	ctx context.Context
 
@@ -49,10 +87,13 @@ type Manager struct {
 }
 
 func NewManager(ctx context.Context, email string, acmeUri string) (*Manager, error) {
+	crtStore, err := newCertStore(DefaultBasePath)
+	if err != nil {
+		logrus.WithError(err).Error("Failed to create cert manager store")
+		return nil, err
+	}
 	m := &Manager{
-		acmeClient: &acme.Client{
-			DirectoryURL: acmeUri,
-		},
+		acmeClient:       &acmeClient{acme.Client{DirectoryURL: acmeUri}},
 		ctx:              ctx,
 		httpTokens:       make(map[string]string),
 		httpTokenLock:    &sync.Mutex{},
@@ -60,16 +101,7 @@ func NewManager(ctx context.Context, email string, acmeUri string) (*Manager, er
 		renewBefore:      time.Hour * 24 * 30,
 		mockRenewal:      true,
 		useRSAAccountKey: true,
-	}
-
-	if err := os.MkdirAll(AccountPath, 0755); err != nil {
-		logrus.WithError(err).Error("Failed to create controller base path")
-		return nil, err
-	}
-
-	if err := os.MkdirAll(DefaultCertsBasePath, 0755); err != nil {
-		logrus.WithError(err).Error("Failed to create controller certs base path")
-		return nil, err
+		certStore:        crtStore,
 	}
 
 	rootMux := http.NewServeMux()
@@ -97,62 +129,19 @@ func NewManager(ctx context.Context, email string, acmeUri string) (*Manager, er
 	return m, nil
 }
 
-func (m *Manager) ensureAccount(email string) error {
+func (m *Manager) ensureAccount(email string) (err error) {
 	needsRegister := false
-	accountFilePath := filepath.Join(AccountPath, "account.json")
-	accountFile, err := os.Open(accountFilePath)
-	defer accountFile.Close()
-	if err != nil && os.IsNotExist(err) {
-		needsRegister = true
-	} else if err != nil {
-		logrus.WithError(err).WithFields(logrus.Fields{
-			"accountFilePath": accountFilePath,
-		}).Error("Failed to open account.json")
-		return err
-	}
 
-	keyFilePath := filepath.Join(AccountPath, "private.key")
-	keyFile, err := os.Open(keyFilePath)
-	defer keyFile.Close()
-	if err != nil && os.IsNotExist(err) {
+	acc, err1 := m.certStore.LoadAccount()
+	accKey, err2 := m.certStore.LoadAccountKey()
+	if err1 != nil || err2 != nil {
 		needsRegister = true
-	} else if err != nil {
-		logrus.WithError(err).WithFields(logrus.Fields{
-			"keyFilePath": keyFilePath,
-			"email":       email,
-		}).Error("Failed to open private.key for account")
-		return err
 	}
 
 	if needsRegister {
 		logrus.WithFields(logrus.Fields{
 			"email": email,
 		}).Info("We need to register an new account")
-		accountFile.Close()
-		keyFile.Close()
-
-		os.Remove(accountFilePath)
-		os.Remove(keyFilePath)
-
-		accountFile, err = os.Create(accountFilePath)
-		defer accountFile.Close()
-		if err != nil {
-			logrus.WithError(err).WithFields(logrus.Fields{
-				"accountFilePath": accountFilePath,
-				"email":           email,
-			}).Error("Failed creating the account.json")
-			return err
-		}
-
-		keyFile, err = os.Create(keyFilePath)
-		defer keyFile.Close()
-		if err != nil {
-			logrus.WithError(err).WithFields(logrus.Fields{
-				"keyFilePath": keyFilePath,
-				"email":       email,
-			}).Error("Failed creating the private.key")
-			return err
-		}
 
 		var privateKey crypto.Signer
 
@@ -161,17 +150,10 @@ func (m *Manager) ensureAccount(email string) error {
 		} else {
 			privateKey, err = ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 		}
-		if err != nil {
+		m.acmeClient.SetKey(privateKey)
+		if err := m.certStore.StoreAccountKey(privateKey); err != nil {
 			logrus.WithError(err).WithFields(logrus.Fields{
 				"email": email,
-			}).Error("Failed to generate private key for account")
-			return err
-		}
-		m.acmeClient.Key = privateKey
-		if err := writeKey(keyFile, privateKey); err != nil {
-			logrus.WithError(err).WithFields(logrus.Fields{
-				"keyFilePath": keyFilePath,
-				"email":       email,
 			}).Error("Failed to write private key")
 			return err
 		}
@@ -187,35 +169,26 @@ func (m *Manager) ensureAccount(email string) error {
 			}).Error("Failed to register account")
 			return err
 		}
-		if err := json.NewEncoder(accountFile).Encode(m.acmeAccount); err != nil {
+		if err := m.certStore.StoreAccount(m.acmeAccount); err != nil {
 			logrus.WithError(err).WithFields(logrus.Fields{
 				"email": email,
-			}).Error("Failed to marshal account data")
+			}).Error("Failed to store account data")
 			return err
 		}
 	} else {
 		logrus.Info("Using existing ACME account")
-		key, err := readKey(keyFile)
-		if err != nil {
-			return err
-		}
-		m.acmeClient.Key = key
-		m.acmeAccount = &acme.Account{}
-		if err := json.NewDecoder(accountFile).Decode(m.acmeAccount); err != nil {
-			return err
-		}
+
+		m.acmeClient.SetKey(accKey)
+		m.acmeAccount = acc
 	}
 
 	return nil
 }
 
-func (m *Manager) renewCertificate(domain string, certBytes []byte) (newCerts bool, err error) {
-	certPath := filepath.Join(DefaultCertsBasePath, domain, "cert.pem")
-	keyPath := filepath.Join(DefaultCertsBasePath, domain, "key.pem")
+func (m *Manager) renewCertificate(domain string) (newCerts bool, err error) {
+
 	logger := logrus.WithFields(logrus.Fields{
-		"domain":   domain,
-		"certPath": certPath,
-		"keyPath":  keyPath,
+		"domain": domain,
 	})
 	logger.Info("Renewing certificate")
 	if m.mockRenewal {
@@ -229,7 +202,7 @@ func (m *Manager) renewCertificate(domain string, certBytes []byte) (newCerts bo
 		return
 	}*/
 	logrus.Info("Requesting new certificate")
-	newCerts, err = m.requestCertificate(domain, certPath, keyPath)
+	newCerts, err = m.requestCertificate(domain)
 	if err != nil {
 		logger.WithError(err).Error("Failed to request certificate")
 
@@ -238,43 +211,19 @@ func (m *Manager) renewCertificate(domain string, certBytes []byte) (newCerts bo
 }
 
 func (m *Manager) RenewalForDomain(domain string) bool {
-	certPath := filepath.Join(DefaultCertsBasePath, domain, "cert.pem")
-	keyPath := filepath.Join(DefaultCertsBasePath, domain, "key.pem")
+
 	logger := logrus.WithFields(logrus.Fields{
-		"domain":   domain,
-		"certPath": certPath,
-		"keyPath":  keyPath,
+		"domain": domain,
 	})
 	logger.Info("Checking domain for renewal")
-	if !checkCertValid(certPath) {
+	if !m.checkCertValid(domain) {
 		logger.Info("Domain needs renewal")
-		derBytes, err := loadCertBundle(certPath)
+		newCerts, err := m.renewCertificate(domain)
 		if err != nil {
-			logger.WithError(err).Error("Failed to load PEM pundle")
+			logger.WithError(err).Error("Failed to renew certificate")
+			return false
 		}
-		var certBytes []byte
-		for _, b := range derBytes {
-			cert, err := x509.ParseCertificate(b)
-			if err == nil {
-				for _, name := range cert.DNSNames {
-					if name == domain {
-						certBytes = b
-						break
-					}
-				}
-			}
-		}
-
-		if len(certBytes) > 0 {
-			newCerts, err := m.renewCertificate(domain, certBytes)
-			if err != nil {
-				logger.WithError(err).Error("Failed to renew certificate")
-				return false
-			}
-			return newCerts
-		} else {
-			logger.Error("Couldn't find certificate for domain in PEM bundle")
-		}
+		return newCerts
 	}
 	logger.Info("Certificate is still valid")
 	return false
@@ -282,47 +231,19 @@ func (m *Manager) RenewalForDomain(domain string) bool {
 
 func (m *Manager) CertForDomain(domain string) (certPath string, keyPath string, newCerts bool, err error) {
 
-	certPath = filepath.Join(DefaultCertsBasePath, domain, "cert.pem")
-	keyPath = filepath.Join(DefaultCertsBasePath, domain, "key.pem")
-	domainFolder := filepath.Join(DefaultCertsBasePath, domain)
-	logrus.WithFields(logrus.Fields{
-		"domain":   domain,
-		"certPath": certPath,
-		"keyPath":  keyPath,
-	}).Info("Requesting certificate for domain")
-	if err = os.MkdirAll(domainFolder, 0755); err != nil {
-		logrus.WithError(err).WithFields(logrus.Fields{
-			"domain":     domain,
-			"certPath":   certPath,
-			"keyPath":    keyPath,
-			"domainPath": domainFolder,
-		}).Error("Failed to create folder for domain")
-		return
-	}
+	logger := logrus.WithFields(logrus.Fields{
+		"domain": domain,
+	})
+	logger.Info("Requesting certificate for domain")
 
-	if !checkCertValid(certPath) {
-		logrus.WithError(err).WithFields(logrus.Fields{
-			"domain":     domain,
-			"certPath":   certPath,
-			"keyPath":    keyPath,
-			"domainPath": domainFolder,
-		}).Info("No valid certificate found for domain")
-		if newCerts, err = m.requestCertificate(domain, certPath, keyPath); err != nil {
-			logrus.WithError(err).WithFields(logrus.Fields{
-				"domain":     domain,
-				"certPath":   certPath,
-				"keyPath":    keyPath,
-				"domainPath": domainFolder,
-			}).Error("Failed to request certificate for domain")
+	if !m.checkCertValid(domain) {
+		logger.WithError(err).WithFields(logrus.Fields{}).Info("No valid certificate found for domain")
+		if newCerts, err = m.requestCertificate(domain); err != nil {
+			logger.WithError(err).WithFields(logrus.Fields{}).Error("Failed to request certificate for domain")
 			return "", "", newCerts, err
 		}
 	} else {
-		logrus.WithError(err).WithFields(logrus.Fields{
-			"domain":     domain,
-			"certPath":   certPath,
-			"keyPath":    keyPath,
-			"domainPath": domainFolder,
-		}).Info("Domain has already valid certificates")
+		logger.WithError(err).WithFields(logrus.Fields{}).Info("Domain has already valid certificates")
 	}
 	return certPath, keyPath, newCerts, nil
 }
@@ -369,7 +290,7 @@ func (m *Manager) HTTP01ChallengeHandler(w http.ResponseWriter, r *http.Request)
 	w.Write([]byte(token))
 }
 
-func (m *Manager) requestCertificate(domain, certPath, keyPath string) (newCerts bool, err error) {
+func (m *Manager) requestCertificate(domain string) (newCerts bool, err error) {
 	authz, err := m.acmeClient.Authorize(m.ctx, domain)
 	if err != nil {
 		logrus.WithError(err).WithFields(logrus.Fields{
@@ -429,12 +350,8 @@ func (m *Manager) requestCertificate(domain, certPath, keyPath string) (newCerts
 		return newCerts, errors.New("Authorization is invalid")
 	}
 	// Assume that we have a valid authorization now for our domain
-	privKeyFile, err := os.Open(keyPath)
-	var privKey crypto.Signer
+	privKey, err := m.certStore.LoadDomainPrivateKey(domain)
 	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"domain": domain,
-		}).Info("Generating new private key for domain")
 		privKey, err = ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 		if err != nil {
 			logrus.WithError(err).WithFields(logrus.Fields{
@@ -442,30 +359,7 @@ func (m *Manager) requestCertificate(domain, certPath, keyPath string) (newCerts
 			}).Error("Failed to generate private key for domain")
 			return newCerts, err
 		}
-		privKeyFile, err := os.Create(keyPath)
-		defer privKeyFile.Close()
-		if err != nil {
-			logrus.WithError(err).WithFields(logrus.Fields{
-				"domain": domain,
-			}).Error("Failed to create private key file")
-			return newCerts, err
-		}
-		logrus.WithFields(logrus.Fields{
-			"domain":         domain,
-			"privateKeyFile": privKey,
-		}).Info("Writing private key for domain")
-		writeKey(privKeyFile, privKey)
-	} else {
-		logrus.WithFields(logrus.Fields{
-			"domain":  domain,
-			"keyPath": keyPath,
-		}).Info("Using existing private key")
-		privKey, err = readKey(privKeyFile)
-		if err != nil {
-			logrus.WithError(err).WithFields(logrus.Fields{
-				"domain":  domain,
-				"keyPath": keyPath,
-			}).Error("Failed to read existing private key")
+		if err := m.certStore.StoreDomainPrivateKey(domain, privKey); err != nil {
 			return newCerts, err
 		}
 	}
@@ -488,10 +382,9 @@ func (m *Manager) requestCertificate(domain, certPath, keyPath string) (newCerts
 		return newCerts, err
 	}
 	logrus.WithFields(logrus.Fields{
-		"domain":   domain,
-		"certPath": certPath,
+		"domain": domain,
 	}).Info("Writing certificate to disk")
-	return newCerts, writeCertBundle(certPath, der)
+	return newCerts, m.certStore.StoreCertDerBundle(domain, der)
 }
 
 func (m *Manager) waitForChallenge(challenge *acme.Challenge, timeout time.Duration) (err error) {
@@ -531,26 +424,11 @@ func (m *Manager) waitForChallenge(challenge *acme.Challenge, timeout time.Durat
 	return nil
 }
 
-func checkCertValid(certPath string) bool {
-	logger := logrus.WithField("path", certPath)
-	certFile, err := os.Open(certPath)
+func (m *Manager) checkCertValid(domain string) bool {
+	logger := logrus.WithField("domain", domain)
+	cert, err := m.certStore.LoadCert(domain)
 	if err != nil {
-		if !os.IsNotExist(err) {
-			logger.WithError(err).Warn("Failed to open cert file")
-		} else {
-			logger.WithError(err).Warn("Can't find cert file")
-		}
-		return false
-	}
-	certBytes, err := ioutil.ReadAll(certFile)
-	if err != nil {
-		logger.WithError(err).Warn("Failed to read certificate bytes")
-		return false
-	}
-	block, _ := pem.Decode(certBytes)
-	cert, err := x509.ParseCertificate(block.Bytes)
-	if err != nil {
-		logger.WithError(err).Warn("Failed to parse certificate")
+		logger.WithError(err).Error("Failed to load certificate for validation")
 		return false
 	}
 	now := time.Now()
@@ -571,95 +449,4 @@ func certRequest(key crypto.Signer, cn string, ext []pkix.Extension, san ...stri
 		ExtraExtensions: ext,
 	}
 	return x509.CreateCertificateRequest(rand.Reader, req, key)
-}
-
-func loadCertBundle(pemPath string) ([][]byte, error) {
-	pemBytes, err := ioutil.ReadFile(pemPath)
-	if err != nil {
-		return nil, err
-	}
-	overflow := pemBytes
-	var derBytes [][]byte
-	var block *pem.Block
-	for {
-		block, overflow = pem.Decode(overflow)
-		if block == nil {
-			break
-		}
-		if block.Type == "CERTIFICATE" {
-			derBytes = append(derBytes, block.Bytes)
-		}
-	}
-	return derBytes, nil
-}
-
-func writeCertBundle(certFilePath string, bundle [][]byte) error {
-	os.Remove(certFilePath)
-	certFile, err := os.Create(certFilePath)
-	defer certFile.Close()
-	if err != nil {
-		logrus.WithError(err).WithFields(logrus.Fields{
-			"certFilePath": certFilePath,
-		}).Error("Failed to create PEM cert bundle")
-		return err
-	}
-	for _, der := range bundle {
-		if err := pem.Encode(certFile, &pem.Block{
-			Type:  "CERTIFICATE",
-			Bytes: der,
-		}); err != nil {
-			logrus.WithError(err).WithFields(logrus.Fields{
-				"certFilePath": certFilePath,
-			}).Error("Failed to encode PEM cert bundle")
-			return err
-		}
-	}
-	return nil
-}
-
-func writeKey(keyFile *os.File, key crypto.PrivateKey) error {
-	switch t := key.(type) {
-	case *ecdsa.PrivateKey:
-		keyBytes, err := x509.MarshalECPrivateKey(t)
-		if err != nil {
-			return err
-		}
-
-		pemBlock := pem.Block{
-			Type:  "EC PRIVATE KEY",
-			Bytes: keyBytes,
-		}
-		return pem.Encode(keyFile, &pemBlock)
-	case *rsa.PrivateKey:
-		keyBytes := x509.MarshalPKCS1PrivateKey(t)
-
-		pemBlock := pem.Block{
-			Type:  "PRIVATE KEY",
-			Bytes: keyBytes,
-		}
-		return pem.Encode(keyFile, &pemBlock)
-	default:
-		return errors.New("Unknown key format")
-	}
-
-}
-
-func readKey(keyFile *os.File) (key crypto.Signer, err error) {
-	pemBytes, err := ioutil.ReadAll(keyFile)
-	if err != nil {
-		return nil, err
-	}
-	block, _ := pem.Decode(pemBytes)
-	if err != nil {
-		return nil, err
-	}
-
-	switch block.Type {
-	case "EC PRIVATE KEY":
-		return x509.ParseECPrivateKey(block.Bytes)
-	case "PRIVATE KEY":
-		return x509.ParsePKCS1PrivateKey(block.Bytes)
-	}
-
-	return nil, errors.New("Unknown key type")
 }
