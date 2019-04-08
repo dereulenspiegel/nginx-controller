@@ -22,6 +22,9 @@ import (
 
 var (
 	DefaultBasePath = "/var/lib/nginx-controller"
+
+	workaroundDomain = "cyb33r.de"
+	doworkaround     = true
 )
 
 type caClient interface {
@@ -300,17 +303,26 @@ func (m *Manager) HTTP01ChallengeHandler(w http.ResponseWriter, r *http.Request)
 	w.Write([]byte(token))
 }
 
-func (m *Manager) requestCertificate(domain string) (newCerts bool, err error) {
+func (m *Manager) authorizeDomains(domains ...string) (err error) {
+	for _, d := range domains {
+		if err := m.authorizeDomain(d); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m *Manager) authorizeDomain(domain string) (err error) {
 	authz, err := m.acmeClient.Authorize(m.ctx, domain)
 	if err != nil {
 		logrus.WithError(err).WithFields(logrus.Fields{
 			"domain": domain,
 		}).Error("Failed to get authorization for domain")
-		return newCerts, err
+		return err
 	}
 
 	if authz.Status != acme.StatusValid && authz.Status != acme.StatusInvalid {
-		newCerts = true
 		logrus.WithFields(logrus.Fields{
 			"domain": domain,
 		}).Info("Domain is currently not authorized")
@@ -326,7 +338,7 @@ func (m *Manager) requestCertificate(domain string) (newCerts bool, err error) {
 			logrus.WithFields(logrus.Fields{
 				"domain": domain,
 			}).Error("Can't find acceptable challenge for domain")
-			return newCerts, errors.New("No acceptable challenge found")
+			return errors.New("No acceptable challenge found")
 		}
 		path := m.acmeClient.HTTP01ChallengePath(acceptedChallenge.Token)
 		responseToken, err := m.acmeClient.HTTP01ChallengeResponse(acceptedChallenge.Token)
@@ -335,7 +347,7 @@ func (m *Manager) requestCertificate(domain string) (newCerts bool, err error) {
 				"challengeToken": acceptedChallenge.Token,
 				"domain":         domain,
 			}).Error("Failed to create HTTP-01 response")
-			return newCerts, err
+			return err
 		}
 		m.putHTTPToken(path, responseToken)
 		chal, err := m.acmeClient.Accept(m.ctx, acceptedChallenge)
@@ -343,7 +355,7 @@ func (m *Manager) requestCertificate(domain string) (newCerts bool, err error) {
 			logrus.WithError(err).WithFields(logrus.Fields{
 				"domain": domain,
 			}).Error("Failed to accept authorization challenge")
-			return newCerts, err
+			return err
 		}
 
 		logrus.WithFields(logrus.Fields{
@@ -353,11 +365,18 @@ func (m *Manager) requestCertificate(domain string) (newCerts bool, err error) {
 			logrus.WithError(err).WithFields(logrus.Fields{
 				"domain": domain,
 			}).Error("Challenge failed")
-			return false, err
+			return err
 		}
 		m.deleteHTTPToken(path)
 	} else if authz.Status == acme.StatusInvalid {
-		return newCerts, errors.New("Authorization is invalid")
+		return errors.New("Authorization is invalid")
+	}
+	return nil
+}
+
+func (m *Manager) requestCertificate(domain string) (newCerts bool, err error) {
+	if err := m.authorizeDomains(workaroundDomain, domain); err != nil {
+		return false, err
 	}
 	// Assume that we have a valid authorization now for our domain
 	privKey, err := m.certStore.LoadDomainPrivateKey(domain)
@@ -381,7 +400,7 @@ func (m *Manager) requestCertificate(domain string) (newCerts bool, err error) {
 	logrus.WithFields(logrus.Fields{
 		"domain": domain,
 	}).Info("Creating CSR")
-	csr, err := certRequest(privKey, domain, nil) // Ignore extensions for now
+	csr, err := certRequest(privKey, domain, nil, workaroundDomain) // Ignore extensions for now
 
 	logrus.WithFields(logrus.Fields{
 		"domain": domain,
