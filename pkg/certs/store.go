@@ -57,7 +57,16 @@ func newCertStore(basePath string) (*certStore, error) {
 	return c, nil
 }
 
+func ensureDir(dir string) error {
+	dir = filepath.Dir(dir)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return errors.Wrap(errors.WithStack(err), "Failed to create directory")
+	}
+	return nil
+}
+
 func (c *certStore) storeKey(keyPath string, privateKey crypto.Signer) error {
+	ensureDir(keyPath)
 	keyFile, err := os.Create(keyPath)
 	defer keyFile.Close()
 	if err != nil {
@@ -177,6 +186,7 @@ func (c *certStore) StoreDomainPrivateKey(domain string, privateKey crypto.Signe
 
 func (c *certStore) StoreCertDerBundle(domain string, certs [][]byte) error {
 	certPath := filepath.Join(c.basePath, domainSubfolder, domain, certFileName)
+	ensureDir(certPath)
 	certFile, err := os.Create(certPath)
 	defer certFile.Close()
 	if err != nil {
