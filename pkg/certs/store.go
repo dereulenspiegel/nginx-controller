@@ -126,7 +126,11 @@ func (c *certStore) loadKey(keyPath string) (key crypto.Signer, err error) {
 	case "EC PRIVATE KEY":
 		key, err = x509.ParseECPrivateKey(block.Bytes)
 	case "PRIVATE KEY":
-		key, err = x509.ParsePKCS1PrivateKey(block.Bytes)
+		var keyVal interface{}
+		keyVal, err = x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err == nil && keyVal != nil {
+			key = keyVal.(crypto.Signer)
+		}
 	default:
 		err = errors.New("Unknown key type")
 	}
