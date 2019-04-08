@@ -86,7 +86,10 @@ func (c *certStore) storeKey(keyPath string, privateKey crypto.Signer) error {
 		}
 
 	case *rsa.PrivateKey:
-		keyBytes := x509.MarshalPKCS1PrivateKey(t)
+		keyBytes, err := x509.MarshalPKCS8PrivateKey(t)
+		if err != nil {
+			return errors.Wrap(errors.WithStack(err), "Failed to marshal rsa private key")
+		}
 
 		pemBlock = &pem.Block{
 			Type:  "PRIVATE KEY",
