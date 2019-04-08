@@ -82,8 +82,8 @@ type Manager struct {
 
 	httpServer *http.Server
 
-	mockRenewal      bool
-	useRSAAccountKey bool
+	mockRenewal bool
+	useRSA      bool
 }
 
 func NewManager(ctx context.Context, email string, acmeUri string) (*Manager, error) {
@@ -93,15 +93,15 @@ func NewManager(ctx context.Context, email string, acmeUri string) (*Manager, er
 		return nil, err
 	}
 	m := &Manager{
-		acmeClient:       &acmeClient{acme.Client{DirectoryURL: acmeUri}},
-		ctx:              ctx,
-		httpTokens:       make(map[string]string),
-		httpTokenLock:    &sync.Mutex{},
-		email:            email,
-		renewBefore:      time.Hour * 24 * 30,
-		mockRenewal:      true,
-		useRSAAccountKey: true,
-		certStore:        crtStore,
+		acmeClient:    &acmeClient{acme.Client{DirectoryURL: acmeUri}},
+		ctx:           ctx,
+		httpTokens:    make(map[string]string),
+		httpTokenLock: &sync.Mutex{},
+		email:         email,
+		renewBefore:   time.Hour * 24 * 30,
+		mockRenewal:   true,
+		useRSA:        true,
+		certStore:     crtStore,
 	}
 
 	rootMux := http.NewServeMux()
@@ -145,7 +145,7 @@ func (m *Manager) ensureAccount(email string) (err error) {
 
 		var privateKey crypto.Signer
 
-		if m.useRSAAccountKey {
+		if m.useRSA {
 			privateKey, err = rsa.GenerateKey(rand.Reader, 4096)
 		} else {
 			privateKey, err = ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
@@ -352,7 +352,11 @@ func (m *Manager) requestCertificate(domain string) (newCerts bool, err error) {
 	// Assume that we have a valid authorization now for our domain
 	privKey, err := m.certStore.LoadDomainPrivateKey(domain)
 	if err != nil {
-		privKey, err = ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+		if m.useRSA {
+			privKey, err = rsa.GenerateKey(rand.Reader, 4096)
+		} else {
+			privKey, err = ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+		}
 		if err != nil {
 			logrus.WithError(err).WithFields(logrus.Fields{
 				"domain": domain,
