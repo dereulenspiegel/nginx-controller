@@ -245,6 +245,16 @@ func (m *Manager) CertForDomain(domain string) (certPath string, keyPath string,
 	} else {
 		logger.WithError(err).WithFields(logrus.Fields{}).Info("Domain has already valid certificates")
 	}
+	certPath, err = m.certStore.CertPath(domain)
+	if err != nil {
+		logger.WithError(err).Error("Failed to get certificate path")
+		return
+	}
+	keyPath, err = m.certStore.KeyPath(domain)
+	if err != nil {
+		logger.WithError(err).Error("Failed to get domain key path")
+		return
+	}
 	return certPath, keyPath, newCerts, nil
 }
 
