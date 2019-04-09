@@ -286,6 +286,14 @@ func (c *controller) loop() {
 			reloadNecessary := false
 			newServers := make(map[string]*nginx.ServerConfig)
 			for _, cc := range currentConfigs {
+				if cc.Upstream == "" || cc.Host == "" {
+					logrus.WithFields(logrus.Fields{
+						"containerID": cc.ContainerID,
+						"upstream":    cc.Upstream,
+						"host":        cc.Host,
+					}).Error("Got invalid existing container. Something is missing")
+					continue
+				}
 				s := nginx.DefaultServerTemplateConfig(cc.Host, cc.Upstream)
 				newServers[cc.Host] = s
 				if _, exists := c.nginxTmplConf.HTTP.Servers[cc.Host]; !exists {
