@@ -37,7 +37,7 @@ http {
       listen          [::]:443 ssl http2;
       server_name     {{ .ServerName }};
 
-      ssl_protocols TLSv1.2;
+      ssl_protocols TLSv1.2 TLSv1.3;
       ssl_prefer_server_ciphers on;
       ssl_ciphers "EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH";
       ssl_ecdh_curve auto;
