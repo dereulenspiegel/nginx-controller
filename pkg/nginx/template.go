@@ -42,9 +42,11 @@ http {
       ssl_ciphers "EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH";
       ssl_ecdh_curve auto;
       ssl_session_cache shared:SSL:{{ hrBytes .SSLSessionCacheSize | toLower }};
+      ssl_session_timeout 1h;
       ssl_session_tickets off; # Requires nginx >= 1.5.9
       ssl_stapling on; # Requires nginx >= 1.3.7
       ssl_stapling_verify on; # Requires nginx => 1.3.7
+      ssl_buffer_size 4k;
       resolver {{ spaceList .Resolver }} valid=300s;
       resolver_timeout {{ .ResolverTimeout }};
       add_header Strict-Transport-Security "max-age=63072000; includeSubdomains; preload";
