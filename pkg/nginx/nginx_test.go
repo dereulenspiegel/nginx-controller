@@ -71,14 +71,16 @@ http {
       listen          [::]:443 ssl http2;
       server_name     foo.bar;
 
-      ssl_protocols TLSv1.2;
+      ssl_protocols TLSv1.2 TLSv1.3;
       ssl_prefer_server_ciphers on;
       ssl_ciphers "EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH";
       ssl_ecdh_curve auto;
       ssl_session_cache shared:SSL:10m;
+      ssl_session_timeout 1h;
       ssl_session_tickets off; # Requires nginx >= 1.5.9
       ssl_stapling on; # Requires nginx >= 1.3.7
       ssl_stapling_verify on; # Requires nginx => 1.3.7
+      ssl_buffer_size 4k;
       resolver 8.8.8.8 8.8.4.4 valid=300s;
       resolver_timeout 5s;
       add_header Strict-Transport-Security "max-age=63072000; includeSubdomains; preload";
