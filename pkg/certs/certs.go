@@ -22,9 +22,6 @@ import (
 
 var (
 	DefaultBasePath = "/var/lib/nginx-controller"
-
-	workaroundDomain = "cyb33r.de"
-	doworkaround     = true
 )
 
 type caClient interface {
@@ -375,7 +372,7 @@ func (m *Manager) authorizeDomain(domain string) (err error) {
 }
 
 func (m *Manager) requestCertificate(domain string) (newCerts bool, err error) {
-	if err := m.authorizeDomains(workaroundDomain, domain); err != nil {
+	if err := m.authorizeDomains(domain); err != nil {
 		return false, err
 	}
 	// Assume that we have a valid authorization now for our domain
@@ -400,7 +397,7 @@ func (m *Manager) requestCertificate(domain string) (newCerts bool, err error) {
 	logrus.WithFields(logrus.Fields{
 		"domain": domain,
 	}).Info("Creating CSR")
-	csr, err := certRequest(privKey, domain, nil, workaroundDomain) // Ignore extensions for now
+	csr, err := certRequest(privKey, domain, nil) // Ignore extensions for now
 
 	logrus.WithFields(logrus.Fields{
 		"domain": domain,

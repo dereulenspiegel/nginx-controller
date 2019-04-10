@@ -74,6 +74,8 @@ http {
         proxy_read_timeout      90;
 
         proxy_redirect off;
+
+        http2_push_preload on;
       }
 {{ end }}
     }
