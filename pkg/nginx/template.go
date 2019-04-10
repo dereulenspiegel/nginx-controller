@@ -3,12 +3,15 @@ package nginx
 var DefaultTemplate = `
 user {{ .User }};
 worker_processes  {{ .WorkProcesses }};
+worker_rlimit_nofile 100000;
 
 error_log  {{ .ErrorLog }};
 pid        {{ .Pid }};
 
 events {
     worker_connections  {{ .Events.WorkerConnections }};
+    use epoll;
+    multi_accept on;
 }
 
 http {
@@ -28,8 +31,14 @@ http {
     gzip  {{ nginxBool .HTTP.GZIP }};
     gzip_proxied {{ .HTTP.GZIPProxied }};
     gzip_types {{ spaceList .HTTP.GZIPTypes }};
+    gzip_min_length 10240;
+    gzip_comp_level 1;
+    gzip_vary on;
+    gzip_disable msie6;
 
     client_max_body_size {{ hrBytes .HTTP.ClientMaxBodySize }};
+
+    reset_timedout_connection on;
 
 {{ range .HTTP.Servers }}
     server {

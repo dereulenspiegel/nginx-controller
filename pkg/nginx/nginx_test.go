@@ -37,12 +37,15 @@ func TestToByteUnit(t *testing.T) {
 var expectedConfig = `
 user nginx;
 worker_processes  2;
+worker_rlimit_nofile 100000;
 
 error_log  stderr;
 pid        /var/run/nginx.pid;
 
 events {
-    worker_connections  1024;
+    worker_connections  4096;
+    use epoll;
+    multi_accept on;
 }
 
 http {
@@ -62,8 +65,14 @@ http {
     gzip  on;
     gzip_proxied any;
     gzip_types text/plain text/css application/json application/x-javascript text/xml application/xml text/javascript;
+    gzip_min_length 10240;
+    gzip_comp_level 1;
+    gzip_vary on;
+    gzip_disable msie6;
 
     client_max_body_size 25M;
+
+    reset_timedout_connection on;
 
 
     server {
