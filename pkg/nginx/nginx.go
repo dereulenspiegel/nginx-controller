@@ -100,7 +100,7 @@ func DefaultTemplateConfig() *TemplateConfig {
 		ErrorLog:      "stderr",
 		Pid:           "/var/run/nginx.pid",
 		Events: &EventsConfig{
-			WorkerConnections: 2048,
+			WorkerConnections: 1024,
 		},
 		HTTP: &HTTPConfig{
 			AccessLog:                 "off",

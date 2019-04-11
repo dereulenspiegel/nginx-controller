@@ -42,7 +42,7 @@ error_log  stderr;
 pid        /var/run/nginx.pid;
 
 events {
-    worker_connections  2048;
+    worker_connections  1024;
     use epoll;
     multi_accept on;
 }
