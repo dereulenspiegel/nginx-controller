@@ -36,14 +36,14 @@ func TestToByteUnit(t *testing.T) {
 
 var expectedConfig = `
 user nginx;
-worker_processes  2;
+worker_processes  auto;
 worker_rlimit_nofile 100000;
 
 error_log  stderr;
 pid        /var/run/nginx.pid;
 
 events {
-    worker_connections  4096;
+    worker_connections  2048;
     use epoll;
     multi_accept on;
 }
