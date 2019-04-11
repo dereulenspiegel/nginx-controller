@@ -3,7 +3,6 @@ package nginx
 var DefaultTemplate = `
 user {{ .User }};
 worker_processes  auto;
-worker_rlimit_nofile 100000;
 
 error_log  {{ .ErrorLog }};
 pid        {{ .Pid }};

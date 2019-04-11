@@ -37,7 +37,6 @@ func TestToByteUnit(t *testing.T) {
 var expectedConfig = `
 user nginx;
 worker_processes  auto;
-worker_rlimit_nofile 100000;
 
 error_log  stderr;
 pid        /var/run/nginx.pid;
