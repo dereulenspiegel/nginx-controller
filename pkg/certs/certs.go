@@ -464,9 +464,10 @@ func (m *Manager) checkCertValid(domain string) bool {
 
 	if err = validateCert(domain, cert, intermediateCerts...); err != nil {
 		logger.WithError(err).Warn("Certificate validation failed")
+		return false
 	}
-
-	return err != nil
+	logger.Info("Certificate is stilll valid")
+	return true
 }
 
 func certRequest(key crypto.Signer, cn string, ext []pkix.Extension, san ...string) ([]byte, error) {
