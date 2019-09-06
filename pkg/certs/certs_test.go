@@ -107,9 +107,9 @@ func (m *mockStore) LoadCertBundle(domain string) (certs []*x509.Certificate, er
 	args := m.Called(domain)
 	return args.Get(0).([]*x509.Certificate), args.Error(1)
 }
-func (m *mockStore) LoadCert(domain string) (cert *x509.Certificate, err error) {
+func (m *mockStore) LoadCert(domain string) (cert *x509.Certificate, intermediates []*x509.Certificate, err error) {
 	args := m.Called(domain)
-	return args.Get(0).(*x509.Certificate), args.Error(1)
+	return args.Get(0).(*x509.Certificate), args.Get(1).([]*x509.Certificate), args.Error(2)
 }
 func (m *mockStore) KeyPath(domain string) (keyPath string, err error) {
 	args := m.Called(domain)

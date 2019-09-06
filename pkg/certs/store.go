@@ -271,19 +271,22 @@ func (c *certStore) LoadCertBundle(domain string) (certs []*x509.Certificate, er
 	return
 }
 
-func (c *certStore) LoadCert(domain string) (cert *x509.Certificate, err error) {
+func (c *certStore) LoadCert(domain string) (cert *x509.Certificate, intermediateCerts []*x509.Certificate, err error) {
 	certs, err := c.LoadCertBundle(domain)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	for _, cert = range certs {
-		for _, dnsname := range cert.DNSNames {
+	for _, cc := range certs {
+		found := false
+		for _, dnsname := range cc.DNSNames {
 			if domain == dnsname {
-				return
+				cert = cc
+				found = true
 			}
 		}
+		if !found {
+			intermediateCerts = append(intermediateCerts, cc)
+		}
 	}
-	cert = nil
-	err = errors.New("No certificate for domain in cert bundle")
 	return
 }

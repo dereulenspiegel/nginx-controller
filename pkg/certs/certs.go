@@ -51,7 +51,7 @@ type store interface {
 	StoreCertDerBundle(domain string, certs [][]byte) error
 	LoadCertDerBundle(domain string) (certs [][]byte, err error)
 	LoadCertBundle(domain string) (certs []*x509.Certificate, err error)
-	LoadCert(domain string) (cert *x509.Certificate, err error)
+	LoadCert(domain string) (cert *x509.Certificate, intermediateCerts []*x509.Certificate, err error)
 	KeyPath(domain string) (keyPath string, err error)
 	CertPath(domain string) (certPath string, err error)
 }
@@ -99,7 +99,7 @@ func NewManager(ctx context.Context, email string, acmeUri string) (*Manager, er
 		httpTokenLock: &sync.Mutex{},
 		email:         email,
 		renewBefore:   time.Hour * 24 * 30,
-		mockRenewal:   true,
+		mockRenewal:   false,
 		useRSA:        true,
 		certStore:     crtStore,
 	}
@@ -130,18 +130,18 @@ func NewManager(ctx context.Context, email string, acmeUri string) (*Manager, er
 }
 
 func (m *Manager) ensureAccount(email string) (err error) {
+	logger := logrus.WithField("email", email)
 	needsRegister := false
 
 	acc, err1 := m.certStore.LoadAccount()
 	accKey, err2 := m.certStore.LoadAccountKey()
 	if err1 != nil || err2 != nil {
+		logger.Debug("Couldn't load existing account, registering new account")
 		needsRegister = true
 	}
 
 	if needsRegister {
-		logrus.WithFields(logrus.Fields{
-			"email": email,
-		}).Info("We need to register an new account")
+		logger.Info("We need to register an new account")
 
 		var privateKey crypto.Signer
 
@@ -152,9 +152,7 @@ func (m *Manager) ensureAccount(email string) (err error) {
 		}
 		m.acmeClient.SetKey(privateKey)
 		if err := m.certStore.StoreAccountKey(privateKey); err != nil {
-			logrus.WithError(err).WithFields(logrus.Fields{
-				"email": email,
-			}).Error("Failed to write private key")
+			logger.WithError(err).Error("Failed to write private key")
 			return err
 		}
 
@@ -164,19 +162,15 @@ func (m *Manager) ensureAccount(email string) (err error) {
 
 		m.acmeAccount, err = m.acmeClient.Register(m.ctx, m.acmeAccount, acme.AcceptTOS)
 		if err != nil {
-			logrus.WithError(err).WithFields(logrus.Fields{
-				"email": email,
-			}).Error("Failed to register account")
+			logger.WithError(err).Error("Failed to register account")
 			return err
 		}
 		if err := m.certStore.StoreAccount(m.acmeAccount); err != nil {
-			logrus.WithError(err).WithFields(logrus.Fields{
-				"email": email,
-			}).Error("Failed to store account data")
+			logger.WithError(err).Error("Failed to store account data")
 			return err
 		}
 	} else {
-		logrus.Info("Using existing ACME account")
+		logger.Info("Using existing ACME account")
 
 		m.acmeClient.SetKey(accKey)
 		m.acmeAccount = acc
@@ -205,7 +199,8 @@ func (m *Manager) renewCertificate(domain string) (newCerts bool, err error) {
 	newCerts, err = m.requestCertificate(domain)
 	if err != nil {
 		logger.WithError(err).Error("Failed to request certificate")
-
+	} else {
+		logger.Info("Successfully renewed certificate")
 	}
 	return
 }
@@ -456,20 +451,22 @@ func (m *Manager) waitForChallenge(challenge *acme.Challenge, timeout time.Durat
 
 func (m *Manager) checkCertValid(domain string) bool {
 	logger := logrus.WithField("domain", domain)
-	cert, err := m.certStore.LoadCert(domain)
+	cert, intermediateCerts, err := m.certStore.LoadCert(domain)
 	if err != nil {
 		logger.WithError(err).Error("Failed to load certificate for validation")
 		return false
 	}
-	now := time.Now()
-	notExpired := now.After(cert.NotBefore) && now.Before(cert.NotAfter)
-	logger.WithFields(logrus.Fields{
-		"notBefore":  cert.NotBefore.String(),
-		"notAfter":   cert.NotAfter.String(),
-		"now":        now.String(),
-		"notExpired": notExpired,
-	}).Info("Inspecting expiration of certificate")
-	return notExpired
+	logger = logger.WithFields(logrus.Fields{
+		"notBefore": cert.NotBefore.String(),
+		"notAfter":  cert.NotAfter.String(),
+		"now":       time.Now().String(),
+	})
+
+	if err = validateCert(domain, cert, intermediateCerts...); err != nil {
+		logger.WithError(err).Warn("Certificate validation failed")
+	}
+
+	return err != nil
 }
 
 func certRequest(key crypto.Signer, cn string, ext []pkix.Extension, san ...string) ([]byte, error) {
