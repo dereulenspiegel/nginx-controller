@@ -15,8 +15,14 @@ const (
 	HostLabel = "nginx-controller.akuz.de/host"
 )
 
+type dockerClient interface {
+	Events(ctx context.Context, options types.EventsOptions) (<-chan events.Message, <-chan error)
+	ContainerInspect(ctx context.Context, containerID string) (types.ContainerJSON, error)
+	ContainerList(ctx context.Context, options types.ContainerListOptions) ([]types.Container, error)
+}
+
 type Watcher struct {
-	client *docker.Client
+	client dockerClient
 	ctx    context.Context
 }
 
