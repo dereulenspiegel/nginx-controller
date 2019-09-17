@@ -49,7 +49,7 @@ type ContainerConfig struct {
 	ContainerID string
 }
 
-func (w *Watcher) watchEvents(filterArgs filters.Args) chan *ContainerConfig {
+func (w *Watcher) watchEvents(filterArgs filters.Args) <-chan *ContainerConfig {
 	out := make(chan *ContainerConfig, 100)
 
 	eventFilter := types.EventsOptions{
@@ -141,7 +141,7 @@ func (w *Watcher) getContainerConfig(containerID string) (*ContainerConfig, erro
 	return nil, nil
 }
 
-func (w *Watcher) StoppedContainers() chan *ContainerConfig {
+func (w *Watcher) StoppedContainers() <-chan *ContainerConfig {
 	filterArgs := filters.NewArgs()
 	filterArgs.Add("type", "container")
 	filterArgs.Add("event", "stop")
@@ -149,7 +149,7 @@ func (w *Watcher) StoppedContainers() chan *ContainerConfig {
 	return w.watchEvents(filterArgs)
 }
 
-func (w *Watcher) StartedContainers() chan *ContainerConfig {
+func (w *Watcher) StartedContainers() <-chan *ContainerConfig {
 	filterArgs := filters.NewArgs()
 	filterArgs.Add("type", "container")
 	filterArgs.Add("event", "start")

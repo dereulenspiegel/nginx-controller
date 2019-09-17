@@ -51,10 +51,10 @@ func (d *dockerMock) CurrentConfigs() ([]*docker.ContainerConfig, error) {
 	return args.Get(0).([]*docker.ContainerConfig), args.Error(1)
 }
 
-func (d *dockerMock) StoppedContainers() chan *docker.ContainerConfig {
+func (d *dockerMock) StoppedContainers() <-chan *docker.ContainerConfig {
 	return d.Called().Get(0).(chan *docker.ContainerConfig)
 }
-func (d *dockerMock) StartedContainers() chan *docker.ContainerConfig {
+func (d *dockerMock) StartedContainers() <-chan *docker.ContainerConfig {
 	return d.Called().Get(0).(chan *docker.ContainerConfig)
 }
 

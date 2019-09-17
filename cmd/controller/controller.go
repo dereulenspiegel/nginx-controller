@@ -24,8 +24,8 @@ type CertificateManager interface {
 
 type DockerClient interface {
 	CurrentConfigs() ([]*docker.ContainerConfig, error)
-	StoppedContainers() chan *docker.ContainerConfig
-	StartedContainers() chan *docker.ContainerConfig
+	StoppedContainers() <-chan *docker.ContainerConfig
+	StartedContainers() <-chan *docker.ContainerConfig
 }
 
 type controller struct {
