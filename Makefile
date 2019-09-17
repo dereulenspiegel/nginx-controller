@@ -19,6 +19,12 @@ $(BINARY_NAME):
 
 docker: docker.build docker.push
 
+docker.multiarch.push:
+	docker buildx build \
+		--platform linux/amd64,linux/arm64,linux/arm/v7 \
+		--output=type=image,push=true \
+		-t $(DOCKER_IMAGE):$(VERSION) .
+
 docker.build: test
 	docker build . -t $(DOCKER_IMAGE):$(VERSION)
 
