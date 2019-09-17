@@ -37,6 +37,7 @@ nginx-controller will only proxy traffic to containers which have specific label
 are also used to configure how traffic is directed to containers. Right now nginx-controller only
 supports one container per (sub)domain. Also containers should only expose a single TCP port, because
 nginx-controller will send all HTTP traffic to the first TCP port it can find on a container.
+
 | Label | Description |
 |-------|-------------|
 | `nginx-controller.akuz.de/host` | Controls under which domain the container will be available |
