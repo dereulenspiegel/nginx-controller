@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/events"
@@ -13,6 +14,8 @@ import (
 
 const (
 	HostLabel = "nginx-controller.akuz.de/host"
+	PathLabel = "nginx-controller.akuz.de/path"
+	PortLabel = "nginx-controller.akuz.de/port"
 )
 
 type dockerClient interface {
@@ -42,6 +45,7 @@ func New(ctx context.Context) (*Watcher, error) {
 type ContainerConfig struct {
 	Upstream    string
 	Host        string
+	Path        string
 	ContainerID string
 }
 
@@ -108,12 +112,21 @@ func (w *Watcher) getContainerConfig(containerID string) (*ContainerConfig, erro
 	}
 	labels := eventContainer.Config.Labels
 	host := labels[HostLabel]
-	port := 8080
-	for p, _ := range eventContainer.NetworkSettings.Ports {
-		// Just take the first tcp port for now
-		if p.Proto() == "tcp" {
-			port = p.Int()
-			break
+	path := labels[PathLabel]
+	if path == "" {
+		path = "/"
+	}
+	port, err := strconv.Atoi(labels[PortLabel])
+	if err != nil {
+		port = -1
+	}
+	if port == -1 {
+		for p := range eventContainer.NetworkSettings.Ports {
+			// Just take the first tcp port for now
+			if p.Proto() == "tcp" {
+				port = p.Int()
+				break
+			}
 		}
 	}
 	if host != "" {
@@ -121,6 +134,7 @@ func (w *Watcher) getContainerConfig(containerID string) (*ContainerConfig, erro
 			ContainerID: containerID,
 			Upstream:    fmt.Sprintf("http://%s:%d", ipAddress, port),
 			Host:        host,
+			Path:        path,
 		}
 		return cc, nil
 	}
