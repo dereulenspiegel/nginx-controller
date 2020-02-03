@@ -79,7 +79,7 @@ type HTTPConfig struct {
 func (h *HTTPConfig) AppendLocation(host, upstream, path, auth string) *ServerConfig {
 	var s *ServerConfig
 	var exists bool
-	if s, exists = h.Servers[host]; !exists {
+	if s, exists = h.Servers[host]; !exists || s == nil {
 		s = DefaultServerTemplateConfig(host)
 		h.Servers[host] = s
 	}
@@ -219,10 +219,15 @@ func RenderConfig(tmplString string, cfg *TemplateConfig, out io.Writer) (err er
 		logrus.Warn("No servers found in nginx template config")
 	}
 	for host, s := range cfg.HTTP.Servers {
-		logrus.WithFields(logrus.Fields{
-			"host":     host,
-			"upstream": s.Locations["/"].Upstream,
-		}).Info("Including host in rendering")
+		for path, locConf := range s.Locations {
+			logrus.WithFields(logrus.Fields{
+				"host":     host,
+				"path":     path,
+				"auth":     locConf.Auth,
+				"upstream": locConf.Upstream,
+			}).Info("Including host in rendering")
+		}
+
 	}
 	tmpl := template.New("nginx.conf").Funcs(nginxTmplFuncs)
 	tmpl, err = tmpl.Parse(tmplString)
