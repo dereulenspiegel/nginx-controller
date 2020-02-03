@@ -66,6 +66,11 @@ http {
 
       access_log {{ .AccessLog }};
       error_log {{ .ErrorLog }};
+      
+      {{ if .Auth }}
+      auth_basic           "Server protected by nginx-controller";
+      auth_basic_user_file {{.Auth.PasswdFile}};
+      {{ end }}
 
 {{ range $dest, $location := .Locations }}
 
@@ -86,6 +91,11 @@ http {
         proxy_redirect          off;
 
         http2_push_preload      on;
+
+        {{ if .Auth }}
+        auth_basic           "Location protected by nginx-controller";
+        auth_basic_user_file {{.Auth.PasswdFile}};
+        {{ end }}
       }
 {{ end }}
     }

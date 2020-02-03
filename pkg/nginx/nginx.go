@@ -24,6 +24,12 @@ type EventsConfig struct {
 
 type LocationConfig struct {
 	Upstream string
+	Auth     *AuthConfig
+}
+
+type AuthConfig struct {
+	PasswdFile string
+	Off        bool
 }
 
 type ServerConfig struct {
@@ -35,7 +41,25 @@ type ServerConfig struct {
 	SSLKey              string
 	Resolver            []string
 	ResolverTimeout     string
+	Auth                *AuthConfig
 	Locations           map[string]*LocationConfig
+}
+
+func (s *ServerConfig) SetLocation(path, upstream, auth string) {
+	var authConfig *AuthConfig
+	if auth == "off" {
+		authConfig = &AuthConfig{
+			Off: true,
+		}
+	} else if auth != "" {
+		authConfig = &AuthConfig{
+			PasswdFile: auth,
+		}
+	}
+	s.Locations[path] = &LocationConfig{
+		Upstream: upstream,
+		Auth:     authConfig,
+	}
 }
 
 type HTTPConfig struct {
@@ -50,6 +74,18 @@ type HTTPConfig struct {
 	GZIPTypes                 []string
 	ClientMaxBodySize         uint64
 	Servers                   map[string]*ServerConfig
+}
+
+func (h *HTTPConfig) AppendLocation(host, upstream, path, auth string) *ServerConfig {
+	var s *ServerConfig
+	var exists bool
+	if s, exists = h.Servers[host]; !exists {
+		s = DefaultServerTemplateConfig(host)
+		h.Servers[host] = s
+	}
+
+	s.SetLocation(path, upstream, auth)
+	return s
 }
 
 func (h *HTTPConfig) UpdateServerDefaultUpstream(host, upstream string) error {
@@ -73,7 +109,21 @@ type TemplateConfig struct {
 	HTTP          *HTTPConfig
 }
 
-func DefaultServerTemplateConfig(name string, defaultUpstream ...string) *ServerConfig {
+func DefaultServerTemplateConfig(name string) *ServerConfig {
+	c := &ServerConfig{
+		ServerName:          name,
+		ErrorLog:            "stderr",
+		AccessLog:           "off",
+		SSLSessionCacheSize: 10 * 1024 * 1024,
+		Resolver:            []string{"8.8.8.8", "8.8.4.4"},
+		ResolverTimeout:     "5s",
+		Locations:           make(map[string]*LocationConfig),
+	}
+
+	return c
+}
+
+func DefaultServerTemplateConfigWithUpstream(name string, defaultUpstream ...string) *ServerConfig {
 	c := &ServerConfig{
 		ServerName:          name,
 		ErrorLog:            "stderr",

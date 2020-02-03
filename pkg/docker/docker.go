@@ -16,6 +16,8 @@ const (
 	HostLabel = "nginx-controller.akuz.de/host"
 	PathLabel = "nginx-controller.akuz.de/path"
 	PortLabel = "nginx-controller.akuz.de/port"
+
+	AuthLabel = "nginx-controller.akuz.de/auth"
 )
 
 type dockerClient interface {
@@ -46,6 +48,7 @@ type ContainerConfig struct {
 	Upstream    string
 	Host        string
 	Path        string
+	Auth        string
 	ContainerID string
 }
 
@@ -113,6 +116,7 @@ func (w *Watcher) getContainerConfig(containerID string) (*ContainerConfig, erro
 	labels := eventContainer.Config.Labels
 	host := labels[HostLabel]
 	path := labels[PathLabel]
+	auth := labels[AuthLabel]
 	if path == "" {
 		path = "/"
 	}
@@ -135,6 +139,7 @@ func (w *Watcher) getContainerConfig(containerID string) (*ContainerConfig, erro
 			Upstream:    fmt.Sprintf("http://%s:%d", ipAddress, port),
 			Host:        host,
 			Path:        path,
+			Auth:        auth,
 		}
 		return cc, nil
 	}

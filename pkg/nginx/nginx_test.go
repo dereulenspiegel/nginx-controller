@@ -100,6 +100,8 @@ http {
 
       access_log off;
       error_log stderr;
+      
+      
 
 
 
@@ -120,6 +122,8 @@ http {
         proxy_redirect          off;
 
         http2_push_preload      on;
+
+        
       }
 
     }
@@ -149,7 +153,7 @@ http {
 
 func TestRenderConfig(t *testing.T) {
 	tmplCfg := DefaultTemplateConfig()
-	tmplCfg.HTTP.Servers["foo.bar"] = DefaultServerTemplateConfig("foo.bar", "http://172.16.0.1:8080")
+	tmplCfg.HTTP.AppendLocation("foo.bar", "http://172.16.0.1:8080", "/", "")
 
 	buf := &bytes.Buffer{}
 

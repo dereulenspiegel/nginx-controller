@@ -195,49 +195,88 @@ func (c *controller) renderConfig() {
 }
 
 func (c *controller) addToServers(container *docker.ContainerConfig) {
-	logrus.Info("Adding to servers config")
-	server := nginx.DefaultServerTemplateConfig(container.Host, container.Upstream)
+	logger := logrus.WithFields(logrus.Fields{
+		"containerID": container.ContainerID,
+		"host":        container.Host,
+		"upstream":    container.Upstream,
+	})
+	logger.Info("Adding to servers config")
+
 	certPath, keyPath, newCert, err := c.certManager.CertForDomain(container.Host)
 	if err != nil {
-		logrus.WithError(err).WithFields(logrus.Fields{
-			"containerID": container.ContainerID,
-			"host":        container.Host,
-			"upstream":    container.Upstream,
-		}).Error("Failed to ensure valid certificates for container")
+		logger.WithError(err).Error("Failed to ensure valid certificates for container")
 		return
 	}
+	server := c.nginxTmplConf.HTTP.AppendLocation(container.Host, container.Upstream, container.Path, container.Auth)
 	server.SSLCertificate = certPath
 	server.SSLKey = keyPath
+
 	c.nginxTmplConf.HTTP.Servers[container.Host] = server
-	logrus.WithFields(logrus.Fields{
+	logger.WithFields(logrus.Fields{
 		"certPath":     certPath,
-		"domain":       container.Host,
-		"containerID":  container.ContainerID,
-		"upstream":     container.Upstream,
 		"resartNgninx": newCert,
 	}).Info("Added virtual host to nginx template config")
 	if !newCert {
-		logrus.WithFields(logrus.Fields{
+		logger.WithFields(logrus.Fields{
 			"certPath":     certPath,
-			"domain":       container.Host,
-			"containerID":  container.ContainerID,
-			"upstream":     container.Upstream,
 			"resartNgninx": newCert,
 		}).Info("Triggering reload for new server config")
 		c.triggerReload()
 	} else {
-		logrus.WithFields(logrus.Fields{
-			"certPath":     certPath,
-			"domain":       container.Host,
-			"containerID":  container.ContainerID,
-			"upstream":     container.Upstream,
-			"resartNgninx": newCert,
+		logger.WithFields(logrus.Fields{
+			"certPath":      certPath,
+			"restartNgninx": newCert,
 		}).Info("Triggering restart to load new certificates")
 		c.triggerReload()
 	}
 }
 
+func (c *controller) checkExistingContainers() {
+	currentConfigs, err := c.docker.CurrentConfigs()
+	if err != nil {
+		logrus.WithError(err).Error("Failed to retrieve current container configs")
+		return
+	}
+
+	newServers := make(map[string]*nginx.ServerConfig)
+	for _, cc := range currentConfigs {
+		if cc.Upstream == "" || cc.Host == "" {
+			logrus.WithFields(logrus.Fields{
+				"containerID": cc.ContainerID,
+				"upstream":    cc.Upstream,
+				"host":        cc.Host,
+			}).Error("Got invalid existing container. Something is missing")
+			continue
+		}
+		s := c.nginxTmplConf.HTTP.AppendLocation(cc.Host, cc.Upstream, cc.Path, cc.Auth)
+		newServers[cc.Host] = s
+	}
+
+	restartNecessary := false
+	for host, s := range newServers {
+		certPath, keyPath, newCert, err := c.certManager.CertForDomain(host)
+		if err != nil {
+			logrus.WithError(err).WithFields(logrus.Fields{
+				"domain": host,
+			}).Error("Failed to ensure valid certificates for container")
+			continue
+		}
+		if newCert {
+			restartNecessary = true
+		}
+		s.SSLCertificate = certPath
+		s.SSLKey = keyPath
+	}
+
+	if !restartNecessary {
+		c.triggerReload()
+	} else {
+		c.triggerRestart()
+	}
+}
+
 func (c *controller) loop() {
+	c.checkExistingContainers()
 	c.checkForRenewal()
 	for {
 		c.tmplLock.Lock()
@@ -277,39 +316,6 @@ func (c *controller) loop() {
 		default:
 			// By default sleep a bit so we do not max out one core
 			time.Sleep(time.Second * 1)
-			currentConfigs, err := c.docker.CurrentConfigs()
-			if err != nil {
-				logrus.WithError(err).Error("Failed to retrieve current container configs")
-				continue
-			}
-
-			reloadNecessary := false
-			newServers := make(map[string]*nginx.ServerConfig)
-			for _, cc := range currentConfigs {
-				if cc.Upstream == "" || cc.Host == "" {
-					logrus.WithFields(logrus.Fields{
-						"containerID": cc.ContainerID,
-						"upstream":    cc.Upstream,
-						"host":        cc.Host,
-					}).Error("Got invalid existing container. Something is missing")
-					continue
-				}
-				s := nginx.DefaultServerTemplateConfig(cc.Host, cc.Upstream)
-				newServers[cc.Host] = s
-				if _, exists := c.nginxTmplConf.HTTP.Servers[cc.Host]; !exists {
-					reloadNecessary = true
-				}
-			}
-			for host, _ := range c.nginxTmplConf.HTTP.Servers {
-				if _, exists := newServers[host]; !exists {
-					reloadNecessary = true
-				}
-			}
-			c.nginxTmplConf.HTTP.Servers = newServers
-			if reloadNecessary {
-				c.triggerReload()
-			}
-
 		}
 
 		c.tmplLock.Unlock()
