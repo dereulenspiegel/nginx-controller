@@ -37,6 +37,9 @@ type caClient interface {
 	HTTP01ChallengePath(token string) string
 	HTTP01ChallengeResponse(token string) (string, error)
 	WaitAuthorization(ctx context.Context, url string) (*acme.Authorization, error)
+	AuthorizeOrder(ctx context.Context, id []acme.AuthzID, opt ...acme.OrderOption) (*acme.Order, error)
+	WaitOrder(ctx context.Context, url string) (*acme.Order, error)
+	CreateOrderCert(ctx context.Context, url string, csr []byte, bundle bool) (der [][]byte, certURL string, err error)
 }
 
 type store interface {
@@ -295,79 +298,76 @@ func (m *Manager) HTTP01ChallengeHandler(w http.ResponseWriter, r *http.Request)
 	w.Write([]byte(token))
 }
 
-func (m *Manager) authorizeDomains(domains ...string) (err error) {
-	for _, d := range domains {
-		if err := m.authorizeDomain(d); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (m *Manager) authorizeDomain(domain string) (err error) {
-	authz, err := m.acmeClient.Authorize(m.ctx, domain)
+func (m *Manager) authorizeDomain(domain string) (finalizeURL string, err error) {
+	logger := logrus.WithFields(logrus.Fields{
+		"domain": domain,
+	})
+	order, err := m.acmeClient.AuthorizeOrder(m.ctx, []acme.AuthzID{acme.AuthzID{Type: "dns", Value: domain}})
 	if err != nil {
-		logrus.WithError(err).WithFields(logrus.Fields{
-			"domain": domain,
-		}).Error("Failed to get authorization for domain")
-		return err
+		logger.WithError(err).Error("Failed to get authorization for domain")
+		return "", err
 	}
 
-	if authz.Status != acme.StatusValid && authz.Status != acme.StatusInvalid {
-		logrus.WithFields(logrus.Fields{
-			"domain": domain,
-		}).Info("Domain is currently not authorized")
-		var acceptedChallenge *acme.Challenge
+	if order.Status == acme.StatusReady || order.Status == acme.StatusValid {
+		return order.FinalizeURL, nil
+	}
+
+	for _, authzURL := range order.AuthzURLs {
+		authz, err := m.acmeClient.GetAuthorization(m.ctx, authzURL)
+		if err != nil {
+			logger.WithError(err).WithField("authzURL", authzURL).Error("Failed to fetch authorization")
+			continue
+		}
+		if authz.Status != acme.StatusPending {
+			// We are interested only in pending authorizations.
+			continue
+		}
+		var chal *acme.Challenge
 		for _, c := range authz.Challenges {
 			if c.Type == "http-01" {
-				acceptedChallenge = c
+				chal = c
 				break
 			}
 		}
-
-		if acceptedChallenge == nil {
-			logrus.WithFields(logrus.Fields{
-				"domain": domain,
-			}).Error("Can't find acceptable challenge for domain")
-			return errors.New("No acceptable challenge found")
+		if chal == nil {
+			return "", fmt.Errorf("acme/autocert: unable to satisfy %q for domain %q: no viable challenge type found", authz.URI, domain)
 		}
-		path := m.acmeClient.HTTP01ChallengePath(acceptedChallenge.Token)
-		responseToken, err := m.acmeClient.HTTP01ChallengeResponse(acceptedChallenge.Token)
+
+		path := m.acmeClient.HTTP01ChallengePath(chal.Token)
+		responseToken, err := m.acmeClient.HTTP01ChallengeResponse(chal.Token)
 		if err != nil {
-			logrus.WithError(err).WithFields(logrus.Fields{
-				"challengeToken": acceptedChallenge.Token,
-				"domain":         domain,
+			logger.WithError(err).WithFields(logrus.Fields{
+				"challengeToken": chal.Token,
 			}).Error("Failed to create HTTP-01 response")
-			return err
+			return "", err
 		}
 		m.putHTTPToken(path, responseToken)
-		chal, err := m.acmeClient.Accept(m.ctx, acceptedChallenge)
-		if err != nil {
-			logrus.WithError(err).WithFields(logrus.Fields{
-				"domain": domain,
-			}).Error("Failed to accept authorization challenge")
-			return err
+		defer func() {
+			m.deleteHTTPToken(path)
+		}()
+
+		if _, err := m.acmeClient.Accept(m.ctx, chal); err != nil {
+			logger.WithError(err).Error("Failed to accept authorization")
+			return "", fmt.Errorf("Failed to accept authorization: %w", err)
 		}
 
-		logrus.WithFields(logrus.Fields{
-			"domain": domain,
-		}).Info("Waiting for Challenge to complete")
-		if err := m.waitForChallenge(chal, time.Minute*1); err != nil {
-			logrus.WithError(err).WithFields(logrus.Fields{
-				"domain": domain,
-			}).Error("Challenge failed")
-			return err
+		if _, err := m.acmeClient.WaitAuthorization(m.ctx, authz.URI); err != nil {
+			logger.WithError(err).Error("Failed to wait for authorization")
+			return "", fmt.Errorf("Failed to wait for authorization: %w", err)
 		}
-		m.deleteHTTPToken(path)
-	} else if authz.Status == acme.StatusInvalid {
-		return errors.New("Authorization is invalid")
 	}
-	return nil
+
+	order, err = m.acmeClient.WaitOrder(m.ctx, order.URI)
+	if err != nil {
+		logger.WithError(err).Error("Failed to wait for order")
+		return "", fmt.Errorf("Failed to wait for order: %w", err)
+	}
+	return order.FinalizeURL, nil
 }
 
 func (m *Manager) requestCertificate(domain string) (newCerts bool, err error) {
-	if err := m.authorizeDomains(domain); err != nil {
+	finalizeURL, err := m.authorizeDomain(domain)
+	if err != nil {
 		return false, err
 	}
 	// Assume that we have a valid authorization now for our domain
@@ -399,7 +399,7 @@ func (m *Manager) requestCertificate(domain string) (newCerts bool, err error) {
 	}).Info("Requesting certificate at ACME issuer")
 	ctx, cancel := context.WithTimeout(m.ctx, time.Second*60)
 	defer cancel()
-	der, _, err := m.acmeClient.CreateCert(ctx, csr, time.Hour*24*90, true)
+	der, _, err := m.acmeClient.CreateOrderCert(ctx, finalizeURL, csr, true)
 	if err != nil {
 		logrus.WithError(err).WithFields(logrus.Fields{
 			"domain": domain,

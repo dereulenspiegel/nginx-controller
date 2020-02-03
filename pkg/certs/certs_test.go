@@ -60,6 +60,21 @@ func (m *mockAcmeClient) WaitAuthorization(ctx context.Context, url string) (*ac
 	return args.Get(0).(*acme.Authorization), args.Error(1)
 }
 
+func (m *mockAcmeClient) AuthorizeOrder(ctx context.Context, id []acme.AuthzID, opt ...acme.OrderOption) (*acme.Order, error) {
+	args := m.Called(ctx, id, opt)
+	return args.Get(0).(*acme.Order), args.Error(1)
+}
+
+func (m *mockAcmeClient) WaitOrder(ctx context.Context, url string) (*acme.Order, error) {
+	args := m.Called(ctx, url)
+	return args.Get(0).(*acme.Order), args.Error(1)
+}
+
+func (m *mockAcmeClient) CreateOrderCert(ctx context.Context, url string, csr []byte, bundle bool) (der [][]byte, certURL string, err error) {
+	args := m.Called(ctx, url, csr, bundle)
+	return args.Get(0).([][]byte), args.String(1), args.Error(2)
+}
+
 type mockStore struct {
 	mock.Mock
 }
