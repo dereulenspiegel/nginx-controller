@@ -41,3 +41,5 @@ nginx-controller will send all HTTP traffic to the first TCP port it can find on
 | Label | Description |
 |-------|-------------|
 | `nginx-controller.akuz.de/host` | Controls under which domain the container will be available |
+| `nginx-controller.akuz.de/path` | nginx location which should be used |
+| `nginx-controller.akuz.de/port` | Overwrite the discovered TCP port |
