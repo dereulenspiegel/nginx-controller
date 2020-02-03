@@ -56,6 +56,12 @@ func (s *ServerConfig) SetLocation(path, upstream, auth string) {
 			PasswdFile: auth,
 		}
 	}
+	if _, exists := s.Locations[path]; exists {
+		logrus.WithFields(logrus.Fields{
+			"path":     path,
+			"upstream": upstream,
+		}).Warn("Replacing location upstream")
+	}
 	s.Locations[path] = &LocationConfig{
 		Upstream: upstream,
 		Auth:     authConfig,
@@ -79,25 +85,13 @@ type HTTPConfig struct {
 func (h *HTTPConfig) AppendLocation(host, upstream, path, auth string) *ServerConfig {
 	var s *ServerConfig
 	var exists bool
-	if s, exists = h.Servers[host]; !exists || s == nil {
+	if s, exists = h.Servers[host]; !exists {
 		s = DefaultServerTemplateConfig(host)
 		h.Servers[host] = s
 	}
 
 	s.SetLocation(path, upstream, auth)
 	return s
-}
-
-func (h *HTTPConfig) UpdateServerDefaultUpstream(host, upstream string) error {
-	if s, exists := h.Servers[host]; exists {
-		if loc, exists := s.Locations["/"]; exists {
-			loc.Upstream = upstream
-			return nil
-		} else {
-			return LocationBlockNotFound
-		}
-	}
-	return ServerBlockNotFound
 }
 
 type TemplateConfig struct {
@@ -118,26 +112,6 @@ func DefaultServerTemplateConfig(name string) *ServerConfig {
 		Resolver:            []string{"8.8.8.8", "8.8.4.4"},
 		ResolverTimeout:     "5s",
 		Locations:           make(map[string]*LocationConfig),
-	}
-
-	return c
-}
-
-func DefaultServerTemplateConfigWithUpstream(name string, defaultUpstream ...string) *ServerConfig {
-	c := &ServerConfig{
-		ServerName:          name,
-		ErrorLog:            "stderr",
-		AccessLog:           "off",
-		SSLSessionCacheSize: 10 * 1024 * 1024,
-		Resolver:            []string{"8.8.8.8", "8.8.4.4"},
-		ResolverTimeout:     "5s",
-		Locations:           make(map[string]*LocationConfig),
-	}
-
-	if len(defaultUpstream) > 0 {
-		c.Locations["/"] = &LocationConfig{
-			Upstream: defaultUpstream[0],
-		}
 	}
 
 	return c

@@ -211,7 +211,6 @@ func (c *controller) addToServers(container *docker.ContainerConfig) {
 	server.SSLCertificate = certPath
 	server.SSLKey = keyPath
 
-	c.nginxTmplConf.HTTP.Servers[container.Host] = server
 	logger.WithFields(logrus.Fields{
 		"certPath":     certPath,
 		"resartNgninx": newCert,
@@ -307,7 +306,21 @@ func (c *controller) loop() {
 				"host":        container.Host,
 				"upstream":    container.Upstream,
 			}).Info("Removing container")
-			delete(c.nginxTmplConf.HTTP.Servers, container.Host)
+			if s, exists := c.nginxTmplConf.HTTP.Servers[container.Host]; exists {
+				delete(s.Locations, container.Path)
+				if len(s.Locations) == 0 {
+					// Delete server configs which do not have any locations
+					delete(c.nginxTmplConf.HTTP.Servers, container.Host)
+				}
+			} else {
+				logrus.WithFields(logrus.Fields{
+					"containerID": container.ContainerID,
+					"host":        container.Host,
+					"upstream":    container.Upstream,
+					"path":        container.Path,
+				}).Info("Tried removing location but it didn't exist")
+			}
+
 			c.triggerReload()
 
 		case <-c.renewalTicker.C:
