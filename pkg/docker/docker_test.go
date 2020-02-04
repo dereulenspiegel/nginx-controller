@@ -30,6 +30,9 @@ func onContainerInspect(dc *dockerMock, id, hostLabel, ip, port string) {
 						IPAddress: ip,
 					},
 				},
+				DefaultNetworkSettings: types.DefaultNetworkSettings{
+					IPAddress: ip,
+				},
 				NetworkSettingsBase: types.NetworkSettingsBase{
 					Ports: nat.PortMap{
 						nat.Port(fmt.Sprintf("%s/tcp", port)): []nat.PortBinding{

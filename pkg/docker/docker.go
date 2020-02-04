@@ -13,11 +13,11 @@ import (
 )
 
 const (
-	HostLabel = "nginx-controller.akuz.de/host"
-	PathLabel = "nginx-controller.akuz.de/path"
-	PortLabel = "nginx-controller.akuz.de/port"
-
-	AuthLabel = "nginx-controller.akuz.de/auth"
+	HostLabel    = "nginx-controller.akuz.de/host"
+	PathLabel    = "nginx-controller.akuz.de/path"
+	PortLabel    = "nginx-controller.akuz.de/port"
+	AuthLabel    = "nginx-controller.akuz.de/auth"
+	NetworkLabel = "nginx-controller.akuz.de/network"
 )
 
 type dockerClient interface {
@@ -96,27 +96,44 @@ func (w *Watcher) watchEvents(filterArgs filters.Args) <-chan *ContainerConfig {
 }
 
 func (w *Watcher) getContainerConfig(containerID string) (*ContainerConfig, error) {
+	logger := logrus.WithFields(logrus.Fields{
+		"containerID": containerID,
+	})
 	eventContainer, err := w.client.ContainerInspect(w.ctx, containerID)
 	if err != nil {
-		logrus.WithError(err).WithFields(logrus.Fields{
-			"containerID": containerID,
-		}).Error("Could not inspect container after receiving event")
+		logger.WithError(err).Error("Could not inspect container after receiving event")
 		return nil, err
 	}
-	var ipAddress string
-	for _, network := range eventContainer.NetworkSettings.Networks {
-		if network.IPAddress != "" {
-			ipAddress = network.IPAddress
-			break
-		}
-	}
-	if ipAddress == "" {
-		ipAddress = eventContainer.NetworkSettings.IPAddress
-	}
+
 	labels := eventContainer.Config.Labels
 	host := labels[HostLabel]
 	path := labels[PathLabel]
 	auth := labels[AuthLabel]
+	network := labels[NetworkLabel]
+
+	logger = logger.WithFields(logrus.Fields{
+		"labelHost":    host,
+		"labelPath":    path,
+		"labelAuth":    auth,
+		"labelNetwork": network,
+	})
+
+	var ipAddress string
+	if network != "" {
+		if net, exists := eventContainer.NetworkSettings.Networks[network]; exists {
+			ipAddress = net.IPAddress
+		}
+	}
+
+	if ipAddress == "" {
+		ipAddress = eventContainer.NetworkSettings.IPAddress
+	}
+
+	if ipAddress == "" {
+		logger.Error("Failed to determine IP address of container")
+		return nil, fmt.Errorf("Failed to determine IP address of container %s", containerID)
+	}
+
 	if path == "" {
 		path = "/"
 	}
