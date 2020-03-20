@@ -23,8 +23,9 @@ type EventsConfig struct {
 }
 
 type LocationConfig struct {
-	Upstream string
-	Auth     *AuthConfig
+	Upstream         string
+	DisableBuffering bool
+	Auth             *AuthConfig
 }
 
 type AuthConfig struct {

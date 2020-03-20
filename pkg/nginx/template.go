@@ -81,9 +81,14 @@ http {
         proxy_set_header        X-Real-IP $remote_addr;
         proxy_set_header        X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header        X-Forwarded-Proto $scheme;
+        proxy_set_header        X-Forwarded-Protocol $scheme;
         proxy_set_header        X-Forwarded-Ssl on;
         proxy_set_header        Connection "";
         proxy_http_version      1.1;
+
+        proxy_set_header        Upgrade $http_upgrade;
+        proxy_set_header        Connection "upgrade";
+        proxy_set_header        X-Forwarded-Host $http_host;
 
 
         proxy_pass              {{ $location.Upstream }};
@@ -92,6 +97,9 @@ http {
         proxy_redirect          off;
 
         http2_push_preload      on;
+        {{ if .DisableBuffering }}
+        proxy_buffering         off;
+        {{ end }}
 
         {{ if .Auth }}
         auth_basic           "Location protected by nginx-controller";
