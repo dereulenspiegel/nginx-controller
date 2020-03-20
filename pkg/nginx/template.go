@@ -39,6 +39,11 @@ http {
 
     reset_timedout_connection on;
 
+    map $http_upgrade $connection_upgrade {
+      default upgrade;
+      '' close;
+    }
+
 {{ range .HTTP.Servers }}
     server {
       listen          443 ssl http2;
@@ -83,11 +88,10 @@ http {
         proxy_set_header        X-Forwarded-Proto $scheme;
         proxy_set_header        X-Forwarded-Protocol $scheme;
         proxy_set_header        X-Forwarded-Ssl on;
-        proxy_set_header        Connection "";
         proxy_http_version      1.1;
 
         proxy_set_header        Upgrade $http_upgrade;
-        proxy_set_header        Connection "upgrade";
+        proxy_set_header        Connection $connection_upgrade;
         proxy_set_header        X-Forwarded-Host $http_host;
 
 
