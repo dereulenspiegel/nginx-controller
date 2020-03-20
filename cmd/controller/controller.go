@@ -207,7 +207,7 @@ func (c *controller) addToServers(container *docker.ContainerConfig) {
 		logger.WithError(err).Error("Failed to ensure valid certificates for container")
 		return
 	}
-	server := c.nginxTmplConf.HTTP.AppendLocation(container.Host, container.Upstream, container.Path, container.Auth)
+	server := c.nginxTmplConf.HTTP.AppendLocation(container.Host, container.Upstream, container.Path, container.Auth, container.DisableBuffer)
 	server.SSLCertificate = certPath
 	server.SSLKey = keyPath
 
@@ -247,7 +247,7 @@ func (c *controller) checkExistingContainers() {
 			}).Error("Got invalid existing container. Something is missing")
 			continue
 		}
-		s := c.nginxTmplConf.HTTP.AppendLocation(cc.Host, cc.Upstream, cc.Path, cc.Auth)
+		s := c.nginxTmplConf.HTTP.AppendLocation(cc.Host, cc.Upstream, cc.Path, cc.Auth, cc.DisableBuffer)
 		newServers[cc.Host] = s
 	}
 

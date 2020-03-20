@@ -46,7 +46,7 @@ type ServerConfig struct {
 	Locations           map[string]*LocationConfig
 }
 
-func (s *ServerConfig) SetLocation(path, upstream, auth string) {
+func (s *ServerConfig) SetLocation(path, upstream, auth string, disableBuffer bool) {
 	var authConfig *AuthConfig
 	if auth == "off" {
 		authConfig = &AuthConfig{
@@ -64,8 +64,9 @@ func (s *ServerConfig) SetLocation(path, upstream, auth string) {
 		}).Warn("Replacing location upstream")
 	}
 	s.Locations[path] = &LocationConfig{
-		Upstream: upstream,
-		Auth:     authConfig,
+		Upstream:         upstream,
+		Auth:             authConfig,
+		DisableBuffering: disableBuffer,
 	}
 }
 
@@ -83,7 +84,7 @@ type HTTPConfig struct {
 	Servers                   map[string]*ServerConfig
 }
 
-func (h *HTTPConfig) AppendLocation(host, upstream, path, auth string) *ServerConfig {
+func (h *HTTPConfig) AppendLocation(host, upstream, path, auth string, disableBuffer bool) *ServerConfig {
 	var s *ServerConfig
 	var exists bool
 	if s, exists = h.Servers[host]; !exists {
@@ -91,7 +92,7 @@ func (h *HTTPConfig) AppendLocation(host, upstream, path, auth string) *ServerCo
 		h.Servers[host] = s
 	}
 
-	s.SetLocation(path, upstream, auth)
+	s.SetLocation(path, upstream, auth, disableBuffer)
 	return s
 }
 

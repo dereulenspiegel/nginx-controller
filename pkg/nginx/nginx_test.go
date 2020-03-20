@@ -160,7 +160,7 @@ http {
 
 func TestRenderConfig(t *testing.T) {
 	tmplCfg := DefaultTemplateConfig()
-	tmplCfg.HTTP.AppendLocation("foo.bar", "http://172.16.0.1:8080", "/", "")
+	tmplCfg.HTTP.AppendLocation("foo.bar", "http://172.16.0.1:8080", "/", "", false)
 
 	buf := &bytes.Buffer{}
 

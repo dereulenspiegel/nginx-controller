@@ -13,11 +13,12 @@ import (
 )
 
 const (
-	HostLabel    = "nginx-controller.akuz.de/host"
-	PathLabel    = "nginx-controller.akuz.de/path"
-	PortLabel    = "nginx-controller.akuz.de/port"
-	AuthLabel    = "nginx-controller.akuz.de/auth"
-	NetworkLabel = "nginx-controller.akuz.de/network"
+	HostLabel          = "nginx-controller.akuz.de/host"
+	PathLabel          = "nginx-controller.akuz.de/path"
+	PortLabel          = "nginx-controller.akuz.de/port"
+	AuthLabel          = "nginx-controller.akuz.de/auth"
+	NetworkLabel       = "nginx-controller.akuz.de/network"
+	DisableBufferLabel = "nginx-controller.akuz.de/disable_buffer"
 )
 
 type dockerClient interface {
@@ -45,11 +46,12 @@ func New(ctx context.Context) (*Watcher, error) {
 }
 
 type ContainerConfig struct {
-	Upstream    string
-	Host        string
-	Path        string
-	Auth        string
-	ContainerID string
+	Upstream      string
+	Host          string
+	Path          string
+	Auth          string
+	ContainerID   string
+	DisableBuffer bool
 }
 
 func (w *Watcher) watchEvents(filterArgs filters.Args) <-chan *ContainerConfig {
@@ -110,6 +112,10 @@ func (w *Watcher) getContainerConfig(containerID string) (*ContainerConfig, erro
 	path := labels[PathLabel]
 	auth := labels[AuthLabel]
 	network := labels[NetworkLabel]
+	disableBuffer := false
+	if labels[DisableBufferLabel] == "true" {
+		disableBuffer = true
+	}
 
 	logger = logger.WithFields(logrus.Fields{
 		"labelHost":    host,
@@ -152,11 +158,12 @@ func (w *Watcher) getContainerConfig(containerID string) (*ContainerConfig, erro
 	}
 	if host != "" {
 		cc := &ContainerConfig{
-			ContainerID: containerID,
-			Upstream:    fmt.Sprintf("http://%s:%d", ipAddress, port),
-			Host:        host,
-			Path:        path,
-			Auth:        auth,
+			ContainerID:   containerID,
+			Upstream:      fmt.Sprintf("http://%s:%d", ipAddress, port),
+			Host:          host,
+			Path:          path,
+			Auth:          auth,
+			DisableBuffer: disableBuffer,
 		}
 		return cc, nil
 	}
